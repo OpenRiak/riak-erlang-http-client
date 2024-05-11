@@ -195,7 +195,7 @@ encode_index({Name, String}) when is_list(String) ->
      String}.
 
 format_link(_Prefix, Bucket, Key, Tag) ->
-    io_lib:format("<buckets/~s/keys/~s>; riaktag=\"~s\"",
+    io_lib:format("</buckets/~s/keys/~s>; riaktag=\"~s\"",
                   [Bucket, Key, Tag]).
 
 make_body(Object) ->
