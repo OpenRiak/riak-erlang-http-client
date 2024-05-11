@@ -194,9 +194,9 @@ encode_index({Name, String}) when is_list(String) ->
     {?HEAD_INDEX_PREFIX ++ unicode:characters_to_list(Name, latin1),
      String}.
 
-format_link(Prefix, Bucket, Key, Tag) ->
-    io_lib:format("</~s/~s/~s>; riaktag=\"~s\"",
-                  [Prefix, Bucket, Key, Tag]).
+format_link(_Prefix, Bucket, Key, Tag) ->
+    io_lib:format("<buckets/~s/keys/~s>; riaktag=\"~s\"",
+                  [Bucket, Key, Tag]).
 
 make_body(Object) ->
     case riakc_obj:get_update_value(Object) of
