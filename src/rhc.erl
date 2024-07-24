@@ -919,7 +919,7 @@ put(Rhc, Object, Options) ->
 %%      by the given `amount'.
 %% @equiv counter_incr(Rhc, Bucket, Key, Amt, [])
 -spec counter_incr(
-    rhc(), binary(), binary(), integer()) ->
+    rhc(), maybe_typed_bucket(), key(), integer()) ->
         ok | {ok, integer()} | {error, term()}.
 counter_incr(Rhc, Bucket, Key, Amt) ->
     counter_incr(Rhc, Bucket, Key, Amt, []).
@@ -944,7 +944,7 @@ counter_incr(Rhc, Bucket, Key, Amt) ->
 %%      </dl>
 %% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
 -spec counter_incr(
-    rhc(), binary(), binary(), integer(), list()) ->
+    rhc(), maybe_typed_bucket(), key(), integer(), list()) ->
         ok | {ok, integer()} | {error, term()}.
 counter_incr(Rhc, Bucket, Key, Amt, Options) ->
     Qs = counter_q_params(Rhc, Options),
@@ -962,7 +962,9 @@ counter_incr(Rhc, Bucket, Key, Amt, Options) ->
     end.
 
 %% @doc Get the counter stored at `bucket', `key'.
--spec counter_val(rhc(), term(), term()) -> {ok, integer()} | {error, term()}.
+-spec counter_val(
+    rhc(), maybe_typed_bucket(), key()) ->
+        {ok, integer()} | {error, term()} | {error, term(), term()}.
 counter_val(Rhc, Bucket, Key) ->
     counter_val(Rhc, Bucket, Key, []).
 
@@ -987,8 +989,8 @@ counter_val(Rhc, Bucket, Key) ->
 %%      </dl>
 %% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
 -spec counter_val(
-    rhc(), term(), term(), list()) ->
-        {ok, integer()} | {error, term()}.
+    rhc(), maybe_typed_bucket(), key(), list()) ->
+        {ok, integer()} | {error, term()} | {error, term(), term()}.
 counter_val(Rhc, Bucket, Key, Options) ->
     Qs = counter_q_params(Rhc, Options),
     Url = make_counter_url(Rhc, Bucket, Key, Qs),
