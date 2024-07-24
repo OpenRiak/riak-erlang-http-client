@@ -820,10 +820,16 @@ aae_erase_keys(Rhc,
 %% result is a list of pairs `{Key, Count | Size}'
 -spec aae_object_stats(
     rhc(),
-    maybe_typed_bucket(),
-    key_range(),
+    riakc_obj:bucket(), key_range(),
     modified_range()) ->
-        {ok, {stats, list({Key::atom(), Val::atom() | list()})}} |
+        {ok,
+            {stats,
+                list(
+                    {Key::binary(),
+                    Val::non_neg_integer() |
+                        list({Key::binary(), Val::non_neg_integer()})})
+                }
+            } |
         {error, any()}.
 aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
