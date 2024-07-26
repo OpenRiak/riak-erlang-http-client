@@ -388,7 +388,8 @@ rt_enqueue(Rhc, Bucket, Key) ->
 %%      `notfound' if the key was not found. It will be
 %%      `realtime_not_enabled' if realtime repl is not enabled.
 -spec rt_enqueue(
-    rhc(), maybe_typed_bucket(), key(), proplist()) -> {ok, riakc_obj()}|{error, term()}.
+    rhc(), maybe_typed_bucket(), key(), proplist()) ->
+        ok|{error, term()}.
 rt_enqueue(Rhc, Bucket, Key, Options) ->
     Qs = get_q_params(Rhc, Options),
     Url = make_rtenqueue_url(Rhc, Bucket, Key, Qs),
@@ -398,7 +399,7 @@ rt_enqueue(Rhc, Bucket, Key, Options) ->
         {error, {ok, "404", _Headers, _}} ->
             {error, notfound};
         {error, {ok, "500", _Header_, <<"Error:\nrealtime_not_enabled\n">>}} ->
-                {error, realtime_not_enabled};
+            {error, realtime_not_enabled};
         {error, Error} ->
             {error, Error}
     end.
@@ -1515,8 +1516,10 @@ index_name(Idx) -> Idx.
 
 
 %% @doc Assemble the URL for the given bucket and key
--spec make_url(rhc(), maybe_bucket(), key()|undefined, proplist()) -> iolist().
-make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
+-spec make_url(
+    rhc(), maybe_typed_bucket(), key()|undefined, proplist()) ->
+        iolist().
+make_url(Rhc, BucketAndType, Key, Query) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     {IsKeys, IsProps, IsBuckets} = detect_bucket_flags(Query),
     lists:flatten(
@@ -1533,7 +1536,7 @@ make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
         ]).
 
 %% @doc Generate a preflist url.
--spec make_preflist_url(rhc(), binary(), binary()) -> iolist().
+-spec make_preflist_url(rhc(), maybe_typed_bucket(), key()) -> iolist().
 make_preflist_url(Rhc, BucketAndType, Key) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     lists:flatten(
@@ -1543,8 +1546,10 @@ make_preflist_url(Rhc, BucketAndType, Key) ->
        [ [ "keys", "/", Key,"/" ] || Key =/= undefined],
        [ ["preflist/"] ]]).
 
-%% @private create the RTEnqueue URL
-make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
+-spec make_rtenqueue_url(
+    rhc(), maybe_typed_bucket(), key(), proplist()) ->
+        iolist(). 
+make_rtenqueue_url(Rhc, BucketAndType, Key, Query) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     lists:flatten(
         [root_url(Rhc),
