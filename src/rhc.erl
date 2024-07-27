@@ -262,7 +262,7 @@ fetch(Rhc, QueueName, internal_aaehash) ->
 -spec push(rhc(),
             binary(),
             [{maybe_typed_bucket(), riakc_obj:key(), riakc_obj:vclock()}]) ->
-                {error, term()}|{ok, iolist()}.
+                {error, term()}|{ok, binary()}.
 push(Rhc, QueueName, KeyClockList) ->
     URL = push_url(Rhc, QueueName),
     ReqHeaders = [{"content-type", "application/json"}],
