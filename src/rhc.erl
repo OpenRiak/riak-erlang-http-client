@@ -344,7 +344,9 @@ get(Rhc, Bucket, Key) ->
 %%      `notfound' if the key was not found.
 -spec get(
     rhc(), maybe_typed_bucket(), key(), proplist()) ->
-        {ok, riakc_obj()}|{error, term()}.
+        {ok, riakc_obj()} |
+        {error, term()} |
+        {error, notfound, riakc_obj:vclock()}.
 get(Rhc, Bucket, Key, Options) ->
     Qs = get_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
