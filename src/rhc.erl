@@ -1174,7 +1174,9 @@ stream_index(Rhc, Bucket, Index, Query, Options) ->
     end.
 
 %% @doc Get the properties of the given bucket.
--spec get_bucket(rhc(), bucket()) -> {ok, proplist()}|{error, term()}.
+-spec get_bucket(
+    rhc(), maybe_typed_bucket()) ->
+        {ok, proplist()}|{error, term()}.
 get_bucket(Rhc, Bucket) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE},
                                             {?Q_KEYS, ?Q_FALSE}]),
