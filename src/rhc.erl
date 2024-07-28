@@ -109,7 +109,7 @@
 -type hash_method() :: pre_hash | {rehash, non_neg_integer()}.
 -type change_method() :: {job, pos_integer()}|local|count.
 -type proplist() :: list({any(), any()}|atom()).
--type index() :: riakc_obj:secondary_index() | binary().
+-type index() :: riakc_obj:secondary_index_id() | binary().
 -type index_query() ::
     {integer(), integer()}|{binary(), binary()}|binary()|integer().
 -type index_options() :: any().
