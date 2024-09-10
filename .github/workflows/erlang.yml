@@ -2,10 +2,9 @@ name: Erlang CI
 
 on:
   push:
-    branches: [ develop-3.2 ]
+    branches: [ nhse-develop-3.4 ]
   pull_request:
-    branches: [ develop-3.2 ]
-
+    branches: [ nhse-develop-3.4 ]
 
 jobs:
 
@@ -17,9 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - "25.1"
+          - "26"
           - "24.3"
-          - "22.3"
 
     container:
       image: erlang:${{ matrix.otp }}
