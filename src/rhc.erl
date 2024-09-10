@@ -1301,7 +1301,7 @@ mapred_bucket(Rhc, Bucket, Query) ->
 
 %% @doc Execute a map/reduce query over all keys in the given bucket.
 -spec mapred_bucket(
-    rhc(), maybe_bucket(), [mapred_queryterm()], integer()) ->
+    rhc(), mapred_inputs(), [mapred_queryterm()], integer()) ->
         {ok, [rhc_mapred:phase_result()]}|{error, term()}.
 mapred_bucket(Rhc, Bucket, Query, Timeout) ->
     {ok, ReqId} = mapred_bucket_stream(Rhc, Bucket, Query, self(), Timeout),
@@ -1310,7 +1310,7 @@ mapred_bucket(Rhc, Bucket, Query, Timeout) ->
 %% @doc Stream map/reduce results over all keys in a bucket to a Pid.
 %%      Similar to {@link mapred_stream/5}
 -spec mapred_bucket_stream(
-    rhc(), maybe_bucket(), [mapred_queryterm()], pid(), integer()) ->
+    rhc(), mapred_inputs(), [mapred_queryterm()], pid(), integer()) ->
         {ok, reference()}|{error, term()}.
 mapred_bucket_stream(Rhc, Bucket, Query, ClientPid, Timeout) ->
     mapred_stream(Rhc, Bucket, Query, ClientPid, Timeout).
