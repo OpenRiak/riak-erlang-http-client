@@ -1251,7 +1251,7 @@ mapred(Rhc, Inputs, Query) ->
 %%      rhc_mapred:encode_mapred/2} for details of the allowed formats
 %%      for `Inputs' and `Query'.
 -spec mapred(
-    rhc(), rhc_mapred:map_input(), [mapred_queryterm()], integer()) ->
+    rhc(), mapred_inputs(), [mapred_queryterm()], integer()) ->
         {ok, [rhc_mapred:phase_result()]}|{error, term()}.
 mapred(Rhc, Inputs, Query, Timeout) ->
     {ok, ReqId} = mapred_stream(Rhc, Inputs, Query, self(), Timeout),
@@ -1276,7 +1276,7 @@ mapred_stream(Rhc, Inputs, Query, ClientPid) ->
 %%      </dl>
 -spec mapred_stream(
     rhc(),
-    rhc_mapred:map_input(),
+    mapred_inputs(),
     [mapred_queryterm()],
     pid(),
     integer()) ->
