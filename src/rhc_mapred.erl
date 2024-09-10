@@ -24,6 +24,8 @@
 %%      encode and decode map/reduce queries.
 -module(rhc_mapred).
 
+-include_lib("riakc/include/riakc.hrl").
+
 -export([encode_mapred/2,
          wait_for_mapred/2]).
 %% spawnable exports
@@ -33,12 +35,8 @@
 -type key_spec() ::
     {riakc_obj:bucket(), riakc_obj:key()}|
         {{riakc_obj:bucket(), riakc_obj:key()}, tag()}.
--type linkspec() :: binary()|'_'.
--type funspec() :: {modfun, atom(), atom()}.
--type query_part() ::
-    {map, funspec(), binary(), boolean()}|
-    {reduce, funspec(), binary(), boolean()}|
-    {link, linkspec(), linkspec(), boolean()}.
+
+-type query_part() :: mapred_queryterm().
 -type phase_result() :: {integer(), [term()]}.
 
 -type map_input() :: riakc_obj:bucket()|[key_spec()]|{modfun, atom(), atom(), term()}.
