@@ -58,7 +58,6 @@
          mapred_stream/4, mapred_stream/5,
          mapred_bucket/3, mapred_bucket/4,
          mapred_bucket_stream/5,
-         search/3, search/5,
          counter_incr/4, counter_incr/5,
          counter_val/3, counter_val/4,
          fetch_type/3, fetch_type/4,
@@ -100,8 +99,6 @@
 -type http_client_id() :: string().
 -type maybe_bucket() ::
     riakc_obj:bucket()|{binary(), undefined}|{undefined, undefined}.
--type maybe_typed_bucket() ::
-    riakc_obj:bucket()|riakc_obj:bucket_and_type().
 -type key_range() :: {riakc_obj:key(), riakc_obj:key()} | all.
 -type segment_filter() :: {list(pos_integer()), tree_size()} | all.
 -type modified_range() :: {ts(), ts()} | all.
@@ -109,7 +106,7 @@
 -type hash_method() :: pre_hash | {rehash, non_neg_integer()}.
 -type change_method() :: {job, pos_integer()}|local|count.
 -type proplist() :: list({any(), any()}|atom()).
--type index() :: riakc_obj:secondary_index_id() | binary().
+-type index() :: secondary_index_id() | binary().
 -type index_query() ::
     {integer(), integer()}|{binary(), binary()}|binary()|integer().
 -type index_options() :: any().
@@ -261,7 +258,7 @@ fetch(Rhc, QueueName, internal_aaehash) ->
 
 -spec push(rhc(),
             binary(),
-            [{maybe_typed_bucket(), riakc_obj:key(), riakc_obj:vclock()}]) ->
+            [{maybe_bucket(), riakc_obj:key(), riakc_obj:vclock()}]) ->
                 {error, term()}|{ok, binary()}.
 push(Rhc, QueueName, KeyClockList) ->
     URL = push_url(Rhc, QueueName),
@@ -302,7 +299,7 @@ peer_discovery(Rhc) ->
             {error, Error}
     end.
 
--spec encode_keys_and_clocks([{maybe_typed_bucket(), riakc_obj:key(), riakc_obj:vclock()}]) -> iolist().
+-spec encode_keys_and_clocks([{maybe_bucket(), riakc_obj:key(), riakc_obj:vclock()}]) -> iolist().
 encode_keys_and_clocks(KeysNClocks) ->
     Keys = {struct, [{<<"keys-clocks">>,
                       [{struct, encode_key_and_clock(Bucket, Key, Clock)} || {Bucket, Key, Clock} <- KeysNClocks]
@@ -343,8 +340,8 @@ get(Rhc, Bucket, Key) ->
 %%      The term in the second position of the error tuple will be
 %%      `notfound' if the key was not found.
 -spec get(
-    rhc(), maybe_typed_bucket(), key(), proplist()) ->
-        {ok, riakc_obj()} |
+    rhc(), maybe_bucket(), riakc_obj:key(), proplist()) ->
+        {ok, riakc_obj:riakc_obj()} |
         {error, term()} |
         {error, notfound, riakc_obj:vclock()}.
 get(Rhc, Bucket, Key, Options) ->
@@ -390,7 +387,7 @@ rt_enqueue(Rhc, Bucket, Key) ->
 %%      `notfound' if the key was not found. It will be
 %%      `realtime_not_enabled' if realtime repl is not enabled.
 -spec rt_enqueue(
-    rhc(), maybe_typed_bucket(), key(), proplist()) ->
+    rhc(), maybe_bucket(), riakc_obj:key(), proplist()) ->
         ok|{error, term()}.
 rt_enqueue(Rhc, Bucket, Key, Options) ->
     Qs = get_q_params(Rhc, Options),
@@ -446,7 +443,7 @@ aae_merge_branches(Rhc, NVal, Branches) ->
     rhc(),
     NVal::pos_integer(),
     Segments::list(pos_integer())) ->
-        {ok, {keysclocks, [{{maybe_typed_bucket(), riakc_obj:key()}, binary()}]}} |
+        {ok, {keysclocks, [{{maybe_bucket(), riakc_obj:key()}, binary()}]}} |
         {error, any()}.
 aae_fetch_clocks(Rhc, NVal, Segments) ->
     Url = make_cached_aae_url(Rhc, keysclocks, NVal, Segments),
@@ -466,7 +463,7 @@ aae_fetch_clocks(Rhc, NVal, Segments) ->
     NVal::pos_integer(),
     Segments::list(pos_integer()),
     ModifiedRange::modified_range()) ->
-        {ok, {keysclocks, [{{maybe_typed_bucket(), riakc_obj:key()}, binary()}]}} |
+        {ok, {keysclocks, [{{maybe_bucket(), riakc_obj:key()}, binary()}]}} |
         {error, any()}.
 aae_fetch_clocks(Rhc, NVal, Segments, ModifiedRange) ->
     Url =
@@ -502,7 +499,7 @@ aae_fetch_clocks(Rhc, NVal, Segments, ModifiedRange) ->
 %% leveled_tictact:import_tree expects
 -spec aae_range_tree(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(), tree_size(),
     segment_filter(), modified_range(), hash_method()) ->
         {ok, {tree, Tree::any()}} | {error, any()}.
@@ -529,7 +526,7 @@ aae_range_tree(Rhc, BucketAndType, KeyRange,
 
 -spec aae_range_clocks(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(),
     segment_filter(),
     modified_range()) ->
@@ -562,7 +559,7 @@ aae_range_clocks(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
 %% Will return the number of keys which have been queued for replication.
 -spec aae_range_replkeys(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(), modified_range(),
     atom()) ->
         {ok, non_neg_integer()} | {error, any()}.
@@ -594,7 +591,7 @@ aae_range_replkeys(Rhc, BucketType, KeyRange, ModifiedRange, QueueName) ->
 %% by fetching the key
 -spec aae_range_repairkeys(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(), modified_range()) ->
         {ok, non_neg_integer()} | {error, any()}.
 aae_range_repairkeys(Rhc, BucketType, KeyRange, ModifiedRange) ->
@@ -640,7 +637,7 @@ aae_range_repairkeys(Rhc, BucketType, KeyRange, ModifiedRange) ->
 %% result is a list of pairs `{Key, Count | Size}'
 -spec aae_find_keys(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(), modified_range(), Query) ->
         {ok, {keys, list({riakc_obj:key(), pos_integer()})}} |
         {error, any()} when
@@ -679,7 +676,7 @@ aae_find_keys(Rhc, BucketAndType, KeyRange, ModifiedRange, Query) ->
 %% inconsistencies within the AAE trees.
 -spec aae_find_tombs(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(),
     segment_filter(),
     modified_range()) ->
@@ -722,7 +719,7 @@ aae_find_tombs(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
 %% task in logs. 
 -spec aae_reap_tombs(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(),
     segment_filter(),
     modified_range(),
@@ -770,7 +767,7 @@ aae_reap_tombs(Rhc,
 %% positive integer used to identify this erase task in logs. 
 -spec aae_erase_keys(
     rhc(),
-    maybe_typed_bucket(),
+    maybe_bucket(),
     key_range(),
     segment_filter(),
     modified_range(),
@@ -859,13 +856,13 @@ aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
 %% leveled_so parallel store.  A minimum n_val can be passed if known.  If
 %% there are buckets (with keys) below the minimum n_val they may not be
 %% detecting in the query.  Will default to 1.
--spec aae_list_buckets(rhc()) -> {ok, list(maybe_typed_bucket())}.
+-spec aae_list_buckets(rhc()) -> {ok, list(maybe_bucket())}.
 aae_list_buckets(Rhc) ->
     Url = lists:flatten([root_url(Rhc), "aaebucketlist"]),
     aae_list_buckets(Rhc, Url).
 
 -spec aae_list_buckets(
-    rhc(), pos_integer()|string())  -> {ok, list(maybe_typed_bucket())}.
+    rhc(), pos_integer()|string())  -> {ok, list(maybe_bucket())}.
 aae_list_buckets(Rhc, MinNVal) when is_integer(MinNVal), MinNVal > 0 ->
     Url = lists:flatten([root_url(Rhc), "aaebucketlist",
                             "?filter=", integer_to_list(MinNVal)]),
@@ -899,7 +896,8 @@ put(Rhc, Object) ->
 %%          `{ok, Object}' is returned if return_body is true.</dd>
 %%      </dl>
 -spec put(
-    rhc(), riakc_obj(), proplist()) -> ok|{ok, riakc_obj()}|{error, term()}.
+    rhc(), riakc_obj:riakc_obj(), proplist()) ->
+        ok|{ok, riakc_obj:riakc_obj()}|{error, term()}.
 put(Rhc, Object, Options) ->
     Qs = put_q_params(Rhc, Options),
     Bucket = riakc_obj:bucket(Object),
@@ -928,7 +926,7 @@ put(Rhc, Object, Options) ->
 %%      by the given `amount'.
 %% @equiv counter_incr(Rhc, Bucket, Key, Amt, [])
 -spec counter_incr(
-    rhc(), maybe_typed_bucket(), key(), integer()) ->
+    rhc(), maybe_bucket(), riakc_obj:key(), integer()) ->
         ok | {ok, integer()} | {error, term()}.
 counter_incr(Rhc, Bucket, Key, Amt) ->
     counter_incr(Rhc, Bucket, Key, Amt, []).
@@ -953,7 +951,7 @@ counter_incr(Rhc, Bucket, Key, Amt) ->
 %%      </dl>
 %% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
 -spec counter_incr(
-    rhc(), maybe_typed_bucket(), key(), integer(), list()) ->
+    rhc(), maybe_bucket(), riakc_obj:key(), integer(), list()) ->
         ok | {ok, integer()} | {error, term()}.
 counter_incr(Rhc, Bucket, Key, Amt, Options) ->
     Qs = counter_q_params(Rhc, Options),
@@ -972,7 +970,7 @@ counter_incr(Rhc, Bucket, Key, Amt, Options) ->
 
 %% @doc Get the counter stored at `bucket', `key'.
 -spec counter_val(
-    rhc(), maybe_typed_bucket(), key()) ->
+    rhc(), maybe_bucket(), riakc_obj:key()) ->
         {ok, integer()} | {error, term()} | {error, term(), term()}.
 counter_val(Rhc, Bucket, Key) ->
     counter_val(Rhc, Bucket, Key, []).
@@ -998,7 +996,7 @@ counter_val(Rhc, Bucket, Key) ->
 %%      </dl>
 %% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
 -spec counter_val(
-    rhc(), maybe_typed_bucket(), key(), list()) ->
+    rhc(), maybe_bucket(), riakc_obj:key(), list()) ->
         {ok, integer()} | {error, term()} | {error, term(), term()}.
 counter_val(Rhc, Bucket, Key, Options) ->
     Qs = counter_q_params(Rhc, Options),
@@ -1023,7 +1021,7 @@ delete(Rhc, Bucket, Key) ->
 %%        <dt>`timeout'</dt>
 %%          <dd>The server-side timeout for the write in ms</dd>
 %%      </dl>
--spec delete(rhc(), maybe_typed_bucket(), key(), proplist()) -> ok|{error, term()}.
+-spec delete(rhc(), maybe_bucket(), riakc_obj:key(), proplist()) -> ok|{error, term()}.
 delete(Rhc, Bucket, Key, Options) ->
     Qs = delete_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
@@ -1094,8 +1092,8 @@ list_keys(Rhc, Bucket) ->
 
 %% @doc List the keys in the given bucket.
 -spec list_keys(
-    rhc(), maybe_typed_bucket(), integer()|undefined) ->
-        {ok, [key()]}|{error, term()}.
+    rhc(), maybe_bucket(), integer()|undefined) ->
+        {ok, [riakc_obj:key()]}|{error, term()}.
 list_keys(Rhc, Bucket, Timeout) ->
     {ok, ReqId} = stream_list_keys(Rhc, Bucket, Timeout),
     rhc_listkeys:wait_for_list(ReqId, ?DEFAULT_TIMEOUT).
@@ -1109,13 +1107,13 @@ stream_list_keys(Rhc, Bucket) ->
 %%      <dl>
 %%         <dt>`done'</dt>
 %%            <dd>end of key list, no more messages will be sent</dd>
-%%         <dt>`{keys, [key()]}'</dt>
+%%         <dt>`{keys, [riakc_obj:key()]}'</dt>
 %%            <dd>a portion of the key list</dd>
 %%         <dt>`{error, term()}'</dt>
 %%            <dd>an error occurred</dd>
 %%      </dl>
 -spec stream_list_keys(
-    rhc(), maybe_typed_bucket(), integer()|undefined) -> {ok, reference()}|{error, term()}.
+    rhc(), maybe_bucket(), integer()|undefined) -> {ok, reference()}|{error, term()}.
 stream_list_keys(Rhc, Bucket, Timeout) ->
     ParamList0 = [{?Q_KEYS, ?Q_STREAM},
                   {?Q_PROPS, ?Q_FALSE}],
@@ -1136,14 +1134,14 @@ stream_list_keys(Rhc, Bucket, Timeout) ->
 
 %% @doc Query a secondary index.
 -spec get_index(
-    rhc(), maybe_typed_bucket(), index(), index_query()) ->
+    rhc(), maybe_bucket(), index(), index_query()) ->
         {ok, index_results()} | {error, term()}.
 get_index(Rhc, Bucket, Index, Query) ->
     get_index(Rhc, Bucket, Index, Query, []).
 
 %% @doc Query a secondary index.
 -spec get_index(
-    rhc(), maybe_typed_bucket(), index(), index_query(), index_options()) ->
+    rhc(), maybe_bucket(), index(), index_query(), index_options()) ->
         {ok, index_results()} | {error, term()}.
 get_index(Rhc, Bucket, Index, Query, Options) ->
     {ok, ReqId} = stream_index(Rhc, Bucket, Index, Query, Options),
@@ -1151,14 +1149,14 @@ get_index(Rhc, Bucket, Index, Query, Options) ->
 
 %% @doc Query a secondary index, streaming the results back.
 -spec stream_index(
-    rhc(), maybe_typed_bucket(), index(), index_query()) ->
+    rhc(), maybe_bucket(), index(), index_query()) ->
         {ok, reference()} | {error, term()}.
 stream_index(Rhc, Bucket, Index, Query) ->
     stream_index(Rhc, Bucket, Index, Query, []).
 
 %% @doc Query a secondary index, streaming the results back.
 -spec stream_index(
-    rhc(), maybe_typed_bucket(), index(), index_query(), index_options()) ->
+    rhc(), maybe_bucket(), index(), index_query(), index_options()) ->
         {ok, reference()} | {error, term()}.
 stream_index(Rhc, Bucket, Index, Query, Options) ->
     ParamList = rhc_index:query_options([{stream, true}|Options]),
@@ -1175,7 +1173,7 @@ stream_index(Rhc, Bucket, Index, Query, Options) ->
 
 %% @doc Get the properties of the given bucket.
 -spec get_bucket(
-    rhc(), maybe_typed_bucket()) ->
+    rhc(), maybe_bucket()) ->
         {ok, proplist()}|{error, term()}.
 get_bucket(Rhc, Bucket) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE},
@@ -1199,7 +1197,7 @@ get_bucket(Rhc, Bucket) ->
 %%          <dd>Whether or not this bucket should allow siblings to
 %%          be created for its keys</dd>
 %%      </dl>
--spec set_bucket(rhc(), maybe_typed_bucket(), proplist()) -> ok|{error, term()}.
+-spec set_bucket(rhc(), maybe_bucket(), proplist()) -> ok|{error, term()}.
 set_bucket(Rhc, Bucket, Props0) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE}]),
     Headers =  [{"Content-Type", "application/json"}],
@@ -1278,8 +1276,8 @@ mapred_stream(Rhc, Inputs, Query, ClientPid) ->
 %%      </dl>
 -spec mapred_stream(
     rhc(),
-    rhc_mapred:mapred_input(),
-    [rhc_mapred:query_phase()],
+    rhc_mapred:map_input(),
+    [rhc_mapred:query_part()],
     pid(),
     integer()) ->
         {ok, reference()}|{error, term()}.
@@ -1296,32 +1294,6 @@ mapred_stream(Rhc, Inputs, Query, ClientPid, Timeout) ->
         {error, Error} -> {error, Error}
     end.
 
-%% @doc Execute a search query. This command will return an error
-%%      unless executed against a Riak Search cluster.
--spec search(
-    rhc(), maybe_typed_bucket(), string()) ->
-        {ok, [rhc_mapred:phase_result()]}|{error, term()}.
-search(Rhc, Bucket, SearchQuery) ->
-    %% Run a Map/Reduce operation using reduce_identity to get a list
-    %% of BKeys.
-    IdentityQuery = [{reduce, {modfun, riak_kv_mapreduce, reduce_identity}, none, true}],
-    case search(Rhc, Bucket, SearchQuery, IdentityQuery, ?DEFAULT_TIMEOUT) of
-        {ok, [{_, Results}]} ->
-            %% Unwrap the results.
-            {ok, Results};
-        Other -> Other
-    end.
-
-%% @doc Execute a search query and feed the results into a map/reduce
-%%      query. See {@link rhc_mapred:encode_mapred/2} for details of
-%%      the allowed formats for `MRQuery'. This command will return an error
-%%      unless executed against a Riak Search cluster.
--spec search(
-    rhc(), maybe_typed_bucket(), string(), [rhc_mapred:query_part()], integer()) ->
-        {ok, [rhc_mapred:phase_result()]}|{error, term()}.
-search(Rhc, Bucket, SearchQuery, MRQuery, Timeout) ->
-    Inputs = {modfun, riak_search, mapred_search, [Bucket, SearchQuery]},
-    mapred(Rhc, Inputs, MRQuery, Timeout).
 
 %% @equiv mapred_bucket(Rhc, Bucket, Query, DEFAULT_TIMEOUT)
 mapred_bucket(Rhc, Bucket, Query) ->
@@ -1329,7 +1301,7 @@ mapred_bucket(Rhc, Bucket, Query) ->
 
 %% @doc Execute a map/reduce query over all keys in the given bucket.
 -spec mapred_bucket(
-    rhc(), maybe_typed_bucket(), [rhc_mapred:query_phase()], integer()) ->
+    rhc(), maybe_bucket(), [rhc_mapred:query_part()], integer()) ->
         {ok, [rhc_mapred:phase_result()]}|{error, term()}.
 mapred_bucket(Rhc, Bucket, Query, Timeout) ->
     {ok, ReqId} = mapred_bucket_stream(Rhc, Bucket, Query, self(), Timeout),
@@ -1338,7 +1310,7 @@ mapred_bucket(Rhc, Bucket, Query, Timeout) ->
 %% @doc Stream map/reduce results over all keys in a bucket to a Pid.
 %%      Similar to {@link mapred_stream/5}
 -spec mapred_bucket_stream(
-    rhc(), maybe_typed_bucket(), [rhc_mapred:query_phase()], pid(), integer()) ->
+    rhc(), maybe_bucket(), [rhc_mapred:query_part()], pid(), integer()) ->
         {ok, reference()}|{error, term()}.
 mapred_bucket_stream(Rhc, Bucket, Query, ClientPid, Timeout) ->
     mapred_stream(Rhc, Bucket, Query, ClientPid, Timeout).
@@ -1521,7 +1493,7 @@ index_name(Idx) -> Idx.
 
 %% @doc Assemble the URL for the given bucket and key
 -spec make_url(
-    rhc(), maybe_typed_bucket(), key()|undefined, proplist()) ->
+    rhc(), maybe_bucket(), riakc_obj:key()|undefined, proplist()) ->
         iolist().
 make_url(Rhc, BucketAndType, Key, Query) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
@@ -1540,7 +1512,7 @@ make_url(Rhc, BucketAndType, Key, Query) ->
         ]).
 
 %% @doc Generate a preflist url.
--spec make_preflist_url(rhc(), maybe_typed_bucket(), key()) -> iolist().
+-spec make_preflist_url(rhc(), maybe_bucket(), riakc_obj:key()) -> iolist().
 make_preflist_url(Rhc, BucketAndType, Key) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     lists:flatten(
@@ -1551,7 +1523,7 @@ make_preflist_url(Rhc, BucketAndType, Key) ->
        [ ["preflist/"] ]]).
 
 -spec make_rtenqueue_url(
-    rhc(), maybe_typed_bucket(), key(), proplist()) ->
+    rhc(), maybe_bucket(), riakc_obj:key(), proplist()) ->
         iolist(). 
 make_rtenqueue_url(Rhc, BucketAndType, Key, Query) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
@@ -1924,6 +1896,12 @@ erlify_server_info(Props) ->
 erlify_server_info(<<"nodename">>, Name) -> {node, Name};
 erlify_server_info(<<"riak_kv_version">>, Vsn) -> {server_version, Vsn};
 erlify_server_info(_Ignore, _) -> [].
+
+% -record(preflist_item, {
+%     partition :: non_neg_integer(),
+%     node      :: binary(),
+%     primary   :: boolean()
+%    }).
 
 %% @doc Convert a preflist resource response to a proplist.
 erlify_preflist(Response) ->

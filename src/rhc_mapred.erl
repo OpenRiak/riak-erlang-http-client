@@ -29,25 +29,24 @@
 %% spawnable exports
 -export([mapred_acceptor/3]).
 
+-type tag() :: binary().
+-type key_spec() ::
+    {riakc_obj:bucket(), riakc_obj:key()}|
+        {{riakc_obj:bucket(), riakc_obj:key()}, tag()}.
+-type linkspec() :: binary()|'_'.
+-type funspec() :: {modfun, atom(), atom()}.
+-type query_part() ::
+    {map, funspec(), binary(), boolean()}|
+    {reduce, funspec(), binary(), boolean()}|
+    {link, linkspec(), linkspec(), boolean()}.
+-type phase_result() :: {integer(), [term()]}.
 
-%%% REQUEST ENCODING
+-type map_input() :: riakc_obj:bucket()|[key_spec()]|{modfun, atom(), atom(), term()}.
+
+-export_type([map_input/0, query_part/0, phase_result/0]).
 
 %% @doc Translate erlang-term map/reduce query into JSON format.
-%% @spec encode_mapred(map_input(), [query_part()]) -> iolist()
-%% @type map_input() = bucket()|[key_spec()]|
-%%                     {modfun, atom(), atom(), term()}
-%% @type key_spec() = {bucket(), key()}|{{bucket(), key()},tag()}
-%% @type bucket() = binary()
-%% @type key() = binary()
-%% @type tag() = binary()
-%% @type query_part() = {map, funspec(), binary(), boolean()}|
-%%                      {reduce, funspec(), binary(), boolean()}|
-%%                      {link, linkspec(), linkspec(), boolean()}
-%% @type funspec() = {modfun, atom(), atom()}|
-%%                   {jsfun, binary()}|
-%%                   {jsanon, {bucket(), key()}}|
-%%                   {jsanon, binary()}
-%% @type linkspec() = binary()|'_'
+-spec encode_mapred(map_input(), [query_part()]) -> iolist().
 encode_mapred(Inputs, Query) ->
     mochijson2:encode(
       {struct, [{<<"inputs">>, encode_mapred_inputs(Inputs)},
@@ -148,9 +147,7 @@ encode_mapred_phase({link, Bucket, Tag, Keep}) ->
 
 %% @doc Collect all mapreduce results, and provide them as one value
 %%      instead of streaming to a Pid.
-%% @spec wait_for_mapred(term(), integer()) ->
-%%            {ok, [phase_result()]}|{error, term()}
-%% @type phase_result() = {integer(), [term()]}
+-spec wait_for_mapred(term(), integer()) -> {ok, [phase_result()]}|{error, term()}.
 wait_for_mapred(ReqId, Timeout) ->
     wait_for_mapred_first(ReqId, Timeout).
 
