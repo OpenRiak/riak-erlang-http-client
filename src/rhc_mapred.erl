@@ -31,11 +31,6 @@
 %% spawnable exports
 -export([mapred_acceptor/3]).
 
--type tag() :: binary().
--type key_spec() ::
-    {riakc_obj:bucket(), riakc_obj:key()}|
-        {{riakc_obj:bucket(), riakc_obj:key()}, tag()}.
-
 -type map_input() :: mapred_inputs().
 -type query_part() :: mapred_queryterm().
 -type phase_result() :: {integer(), [term()]}.
