@@ -36,10 +36,11 @@
     {riakc_obj:bucket(), riakc_obj:key()}|
         {{riakc_obj:bucket(), riakc_obj:key()}, tag()}.
 
+-type map_input() :: mapred_inputs().
 -type query_part() :: mapred_queryterm().
 -type phase_result() :: {integer(), [term()]}.
 
--type map_input() :: riakc_obj:bucket()|[key_spec()]|{modfun, atom(), atom(), term()}.
+
 
 -export_type([map_input/0, query_part/0, phase_result/0]).
 
