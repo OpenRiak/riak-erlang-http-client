@@ -24,30 +24,23 @@
 %%      encode and decode map/reduce queries.
 -module(rhc_mapred).
 
+-include_lib("riakc/include/riakc.hrl").
+
 -export([encode_mapred/2,
          wait_for_mapred/2]).
 %% spawnable exports
 -export([mapred_acceptor/3]).
 
+-type map_input() :: mapred_inputs().
+-type query_part() :: mapred_queryterm().
+-type phase_result() :: {integer(), [term()]}.
 
-%%% REQUEST ENCODING
+
+
+-export_type([map_input/0, query_part/0, phase_result/0]).
 
 %% @doc Translate erlang-term map/reduce query into JSON format.
-%% @spec encode_mapred(map_input(), [query_part()]) -> iolist()
-%% @type map_input() = bucket()|[key_spec()]|
-%%                     {modfun, atom(), atom(), term()}
-%% @type key_spec() = {bucket(), key()}|{{bucket(), key()},tag()}
-%% @type bucket() = binary()
-%% @type key() = binary()
-%% @type tag() = binary()
-%% @type query_part() = {map, funspec(), binary(), boolean()}|
-%%                      {reduce, funspec(), binary(), boolean()}|
-%%                      {link, linkspec(), linkspec(), boolean()}
-%% @type funspec() = {modfun, atom(), atom()}|
-%%                   {jsfun, binary()}|
-%%                   {jsanon, {bucket(), key()}}|
-%%                   {jsanon, binary()}
-%% @type linkspec() = binary()|'_'
+-spec encode_mapred(map_input(), [query_part()]) -> iolist().
 encode_mapred(Inputs, Query) ->
     mochijson2:encode(
       {struct, [{<<"inputs">>, encode_mapred_inputs(Inputs)},
@@ -148,9 +141,7 @@ encode_mapred_phase({link, Bucket, Tag, Keep}) ->
 
 %% @doc Collect all mapreduce results, and provide them as one value
 %%      instead of streaming to a Pid.
-%% @spec wait_for_mapred(term(), integer()) ->
-%%            {ok, [phase_result()]}|{error, term()}
-%% @type phase_result() = {integer(), [term()]}
+-spec wait_for_mapred(term(), integer()) -> {ok, [phase_result()]}|{error, term()}.
 wait_for_mapred(ReqId, Timeout) ->
     wait_for_mapred_first(ReqId, Timeout).
 
