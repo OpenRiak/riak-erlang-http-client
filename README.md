@@ -72,7 +72,6 @@ Retrieve an object with =rhc:get/3=:
 Please refer to the generated documentation for more information:
 
 ```
-+BEGIN_SRC shell
 make doc && open doc/index.html
 ```
 
