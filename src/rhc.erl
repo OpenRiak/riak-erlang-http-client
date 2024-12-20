@@ -66,6 +66,8 @@
          get_preflist/3,
          rt_enqueue/3,
          rt_enqueue/4,
+         range_query/4,
+         range_query/7,
          aae_merge_root/2,
          aae_merge_branches/3,
          aae_fetch_clocks/3,
@@ -876,6 +878,153 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
             {error, Error}
     end.
 
+% -type aggregation_tag() :: pos_integer().
+-type index_name() :: binary().
+-type index_value() :: binary().
+-type key_based_accumualtation()
+    ::
+        keys |
+        match_count |
+        key_count.
+% -type term_accumulator() :: binary().
+-type term_based_accumulation()
+    ::
+        term_with_keys |
+        term_with_matchcount |
+        term_with_keycount.
+-type accumulation_option()
+    ::
+        key_based_accumualtation() |
+        term_based_accumulation().
+        
+-type regular_expression() :: binary().
+% -type eval_expression() :: binary().
+% -type filter_Expression() :: binary().
+-type option()
+    ::
+        {timeout, pos_integer()}.
+
+-type keys_output()
+    :: {keys, list(riakc_obj:key())}.
+-type count_output()
+    :: {key_count | match_count, non_neg_integer()}.
+-type term_count_output()
+    :: {term_with_keycount | term_with_matchcount, non_neg_integer()}.
+-type term_keys_output()
+    :: {term_with_keys, list({term(), riakc_obj:key()})}.
+-type error_output()
+    :: {error, binary()}.
+-type query_output()
+    ::
+        keys_output() |
+        count_output() |
+        term_count_output() |
+        term_keys_output().
+
+-spec range_query(
+    rhc(),
+    maybe_bucket(),
+    index_name(),
+    {index_value(), index_value()}) ->
+        {ok, keys_output()} | error_output().
+range_query(Rhc, Bucket, Index, TermRange) ->
+    range_query(
+        Rhc, Bucket, Index, TermRange, undefined, keys, []).
+
+-spec range_query(
+    rhc(),
+    maybe_bucket(),
+    index_name(),
+    {index_value(), index_value()},
+    regular_expression()|undefined,
+    accumulation_option(),
+    list(option())) ->
+        {ok, query_output()} | error_output().
+range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
+    URI = make_query_url(Rhc, Bucket),
+    Query =
+        case Regex of
+            ActualRegex when is_binary(ActualRegex) ->
+                [
+                    {<<"index_name">>, Index},
+                    {<<"start_term">>, ST},
+                    {<<"end_term">>, ET},
+                    {<<"regular_expression">>, Regex}
+                ];
+            undefined ->
+                [
+                    {<<"index_name">>, Index},
+                    {<<"start_term">>, ST},
+                    {<<"end_term">>, ET}
+                ]
+        end,
+    QueryDefn = [{<<"query_list">>, [{struct, Query}]}],
+    FullQuery =
+        {
+            struct,
+            maybe_add_accopt(
+                maybe_add_timeout(QueryDefn, Opts),
+                AccOpt)
+        },
+    EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
+    Headers =
+        [
+            {?HEAD_CLIENT, client_id(Rhc, Opts)},
+            {?HEAD_CTYPE, "application/json"}
+        ],
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+        {ok, "200", _ReplyHeaders, ReplyBody} ->
+            {ok, decode_query_body(ReplyBody)};
+        ErrorResponse ->
+            handle_query_error(ErrorResponse)
+    end.
+
+handle_query_error({error, {ok, _Code, ReplyHeaders, ErrorBody}}) ->
+    MaybeJson =
+        lists:member(
+            {"Content-Type","application/json"},
+            ReplyHeaders
+        ),
+    case MaybeJson of
+        true ->
+            case mochijson2:decode(ErrorBody) of
+                {struct,[{<<"error">>, ErrorMessage}]} ->
+                    {error, ErrorMessage};
+                OtherJSONError ->
+                    {error, OtherJSONError}
+            end;
+        false ->
+            {error, ErrorBody}
+    end;
+handle_query_error({error, Error}) ->
+    {error, Error}.
+
+
+-spec decode_query_body(binary()) -> query_output().
+decode_query_body(Body) ->
+    case mochijson2:decode(Body) of
+        {struct, [{<<"keys">>, KeyList}]} ->
+            {keys, KeyList};
+        {struct, [{<<"match_count">>, MatchCount}]} ->
+            {match_count, MatchCount};
+        {struct, [{<<"key_count">>, KeyCount}]} ->
+            {key_count, KeyCount}
+    end.
+
+maybe_add_timeout(QueryDefn, Opts) ->
+    case lists:keyfind(timeout, 1, Opts) of
+        {timeout, TimeoutSecs}
+                when is_integer(TimeoutSecs), TimeoutSecs > 0 ->
+            [{<<"timeout">>, TimeoutSecs}|QueryDefn];
+        _ ->
+            QueryDefn
+    end.
+
+maybe_add_accopt(QueryDefn, undefined) ->
+    QueryDefn;
+maybe_add_accopt(QueryDefn, AccOpt) ->
+    [{<<"accumulation_option">>, atom_to_binary(AccOpt)}|QueryDefn].
+
 %% @equiv put(Rhc, Object, [])
 put(Rhc, Object) ->
     put(Rhc, Object, []).
@@ -1510,6 +1659,19 @@ make_url(Rhc, BucketAndType, Key, Query) ->
            Key =/= undefined andalso not IsKeys andalso not IsProps ],
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
         ]).
+
+-spec make_query_url(rhc(), bucket()) -> iolist().
+make_query_url(Rhc, BucketAndType) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    lists:flatten(
+        [
+            root_url(Rhc),
+            [ ["types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+            "buckets", "/", mochiweb_util:quote_plus(Bucket),
+            "/query"
+            ]).
+
+
 
 %% @doc Generate a preflist url.
 -spec make_preflist_url(rhc(), maybe_bucket(), riakc_obj:key()) -> iolist().
