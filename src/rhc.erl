@@ -1660,7 +1660,7 @@ make_url(Rhc, BucketAndType, Key, Query) ->
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
         ]).
 
--spec make_query_url(rhc(), bucket()) -> iolist().
+-spec make_query_url(rhc(), maybe_bucket()) -> iolist().
 make_query_url(Rhc, BucketAndType) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     lists:flatten(
