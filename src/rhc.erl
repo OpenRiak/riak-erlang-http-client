@@ -913,7 +913,7 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
 -type term_keys_output()
     :: {term_with_keys, list({term(), riakc_obj:key()})}.
 -type error_output()
-    :: {error, binary()}.
+    :: {error, term()}.
 -type query_output()
     ::
         keys_output() |
