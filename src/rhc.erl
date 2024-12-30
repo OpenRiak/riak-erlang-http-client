@@ -1006,7 +1006,7 @@ decode_query_body(Body) ->
         {struct, [{<<"keys">>, KeyList}]} ->
             {keys, KeyList};
         {struct, [{<<"raw_keys">>, KeyList}]} ->
-            {keys, KeyList};
+            {raw_keys, KeyList};
         {struct, [{<<"match_count">>, MatchCount}]} ->
             {match_count, MatchCount};
         {struct, [{<<"key_count">>, KeyCount}]} ->
