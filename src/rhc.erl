@@ -1005,6 +1005,8 @@ decode_query_body(Body) ->
     case mochijson2:decode(Body) of
         {struct, [{<<"keys">>, KeyList}]} ->
             {keys, KeyList};
+        {struct, [{<<"raw_keys">>, KeyList}]} ->
+            {keys, KeyList};
         {struct, [{<<"match_count">>, MatchCount}]} ->
             {match_count, MatchCount};
         {struct, [{<<"key_count">>, KeyCount}]} ->
