@@ -884,6 +884,7 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
 -type key_based_accumualtation()
     ::
         keys |
+        raw_keys |
         match_count |
         key_count.
 % -type term_accumulator() :: binary().
