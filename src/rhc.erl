@@ -1011,7 +1011,9 @@ decode_query_body(Body) ->
         {struct, [{<<"match_count">>, MatchCount}]} ->
             {match_count, MatchCount};
         {struct, [{<<"key_count">>, KeyCount}]} ->
-            {key_count, KeyCount}
+            {key_count, KeyCount};
+        {struct, [{<<"term_with_keys">>, TermKeyList}]} ->
+            {term_with_keys, TermKeyList}
     end.
 
 maybe_add_timeout(QueryDefn, Opts) ->
