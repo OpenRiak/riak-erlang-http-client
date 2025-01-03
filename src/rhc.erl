@@ -68,6 +68,7 @@
          rt_enqueue/4,
          range_query/4,
          range_query/7,
+         filter_query/10,
          aae_merge_root/2,
          aae_merge_branches/3,
          aae_fetch_clocks/3,
@@ -897,10 +898,15 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
     ::
         key_based_accumualtation() |
         term_based_accumulation().
-        
+
+-type accumulation_term() :: binary().
+
+-type substitution_map()
+    :: #{binary() => binary()}.
+
 -type regular_expression() :: binary().
-% -type eval_expression() :: binary().
-% -type filter_Expression() :: binary().
+-type eval_expression() :: binary().
+-type filter_expression() :: binary().
 -type option()
     ::
         {timeout, pos_integer()}.
@@ -946,27 +952,82 @@ range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
     Query =
         case Regex of
             ActualRegex when is_binary(ActualRegex) ->
-                [
-                    {<<"index_name">>, Index},
-                    {<<"start_term">>, ST},
-                    {<<"end_term">>, ET},
-                    {<<"regular_expression">>, Regex}
-                ];
+                #{
+                    <<"index_name">> => Index,
+                    <<"start_term">> => ST,
+                    <<"end_term">> => ET,
+                    <<"regular_expression">> => Regex
+                };
             undefined ->
-                [
-                    {<<"index_name">>, Index},
-                    {<<"start_term">>, ST},
-                    {<<"end_term">>, ET}
-                ]
+                #{
+                    <<"index_name">> => Index,
+                    <<"start_term">> => ST,
+                    <<"end_term">> => ET
+                }
         end,
-    QueryDefn = [{<<"query_list">>, [{struct, Query}]}],
+    QueryDefn = #{<<"query_list">> => [Query]},
     FullQuery =
-        {
-            struct,
-            maybe_add_accopt(
-                maybe_add_timeout(QueryDefn, Opts),
-                AccOpt)
+        maybe_add_accopt(
+            maybe_add_timeout(QueryDefn, Opts),
+                AccOpt),
+    EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
+    Headers =
+        [
+            {?HEAD_CLIENT, client_id(Rhc, Opts)},
+            {?HEAD_CTYPE, "application/json"}
+        ],
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+        {ok, "200", _ReplyHeaders, ReplyBody} ->
+            {ok, decode_query_body(ReplyBody)};
+        ErrorResponse ->
+            handle_query_error(ErrorResponse)
+    end.
+
+-spec filter_query(
+    rhc(),
+    maybe_bucket(),
+    index_name(),
+    {index_value(), index_value()},
+    eval_expression(),
+    filter_expression(),
+    accumulation_option(),
+    accumulation_term()|undefined,
+    substitution_map()|undefined,
+    list(option())) ->
+        {ok, query_output()}|error_output().
+filter_query(
+    Rhc,
+    Bucket,
+    Index,
+    {StartTerm, EndTerm},
+    EvalExpr,
+    FilterExpr,
+    AccOpt,
+    AccTerm,
+    SubsMap,
+    Opts)
+        when is_binary(EvalExpr), is_binary(FilterExpr) ->
+    URI = make_query_url(Rhc, Bucket),
+    Query =
+        #{
+            <<"index_name">> => Index,
+            <<"start_term">> => StartTerm,
+            <<"end_term">> => EndTerm,
+            <<"evaluation_expression">> => EvalExpr,
+            <<"filter_expression">> => FilterExpr
         },
+    QueryDefn = #{<<"query_list">> => [Query]},
+    FullQuery =
+        maybe_add_subs(
+            maybe_add_accterm(
+                maybe_add_accopt(
+                    maybe_add_timeout(QueryDefn, Opts),
+                    AccOpt
+                ),
+                AccTerm
+            ),
+            SubsMap
+        ),
     EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
     Headers =
         [
@@ -1020,7 +1081,7 @@ maybe_add_timeout(QueryDefn, Opts) ->
     case lists:keyfind(timeout, 1, Opts) of
         {timeout, TimeoutSecs}
                 when is_integer(TimeoutSecs), TimeoutSecs > 0 ->
-            [{<<"timeout">>, TimeoutSecs}|QueryDefn];
+            maps:put(<<"timeout">>, TimeoutSecs, QueryDefn);
         _ ->
             QueryDefn
     end.
@@ -1028,7 +1089,17 @@ maybe_add_timeout(QueryDefn, Opts) ->
 maybe_add_accopt(QueryDefn, undefined) ->
     QueryDefn;
 maybe_add_accopt(QueryDefn, AccOpt) ->
-    [{<<"accumulation_option">>, atom_to_binary(AccOpt)}|QueryDefn].
+    maps:put(<<"accumulation_option">>, atom_to_binary(AccOpt), QueryDefn).
+
+maybe_add_accterm(QueryDefn, undefined) ->
+    QueryDefn;
+maybe_add_accterm(QueryDefn, Term) when is_binary(Term) ->
+    maps:put(<<"accumulation_term">>, Term, QueryDefn).
+
+maybe_add_subs(QueryDefn, undefined) ->
+    QueryDefn;
+maybe_add_subs(QueryDefn, SubsMap) when is_map(SubsMap) ->
+    maps:put(<<"substitutions">>, SubsMap, QueryDefn).
 
 %% @equiv put(Rhc, Object, [])
 put(Rhc, Object) ->
