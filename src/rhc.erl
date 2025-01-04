@@ -69,6 +69,8 @@
          range_query/4,
          range_query/7,
          filter_query/10,
+         combo_query/7,
+         make_query/4,
          aae_merge_root/2,
          aae_merge_branches/3,
          aae_fetch_clocks/3,
@@ -904,9 +906,12 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
 -type substitution_map()
     :: #{binary() => binary()}.
 
+-type query_map() :: #{binary() => term()}.
+
 -type regular_expression() :: binary().
 -type eval_expression() :: binary().
 -type filter_expression() :: binary().
+-type aggregation_expression() :: binary().
 -type option()
     ::
         {timeout, pos_integer()}.
@@ -1041,6 +1046,73 @@ filter_query(
             handle_query_error(ErrorResponse)
     end.
 
+-spec combo_query(
+    rhc(),
+    maybe_bucket(),
+    accumulation_option(),
+    substitution_map(),
+    aggregation_expression(),
+    list(query_map()),
+    list(option())) ->
+        {ok, query_output()}|error_output().
+combo_query(Rhc, Bucket, AccOpt, SubsMap, AggrExpression, QueryList, Opts)
+        when AccOpt == keys; AccOpt == raw_keys; AccOpt == raw_count ->
+    URI = make_query_url(Rhc, Bucket),
+    QueryDefn =
+        #{
+            <<"query_list">> => QueryList,
+            <<"aggregation_expression">> => AggrExpression
+        },
+    FullQuery =
+        maybe_add_subs(
+            maybe_add_accopt(
+                maybe_add_timeout(QueryDefn, Opts),
+                AccOpt
+            ),
+            SubsMap
+        ),
+    EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
+    Headers =
+        [
+            {?HEAD_CLIENT, client_id(Rhc, Opts)},
+            {?HEAD_CTYPE, "application/json"}
+        ],
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+        {ok, "200", _ReplyHeaders, ReplyBody} ->
+            {ok, decode_query_body(ReplyBody)};
+        ErrorResponse ->
+            handle_query_error(ErrorResponse)
+    end.
+
+-spec make_query(
+    pos_integer(), index_name(), {index_value(), index_value()},
+    undefined|regular_expression()|{eval_expression(), filter_expression()}) ->
+        query_map().
+make_query(Tag, Index, {StartTerm, EndTerm}, undefined) ->
+    #{
+        <<"aggregation_tag">> => Tag,
+        <<"index_name">> => Index,
+        <<"start_term">> => StartTerm,
+        <<"end_term">> => EndTerm
+    };
+make_query(Tag, Index, {StartTerm, EndTerm}, {Eval, Filter}) ->
+    #{
+        <<"aggregation_tag">> => Tag,
+        <<"index_name">> => Index,
+        <<"start_term">> => StartTerm,
+        <<"end_term">> => EndTerm,
+        <<"evaluation_expression">> => Eval,
+        <<"filter_expression">> => Filter
+    };
+make_query(Tag, Index, {StartTerm, EndTerm}, Regex) when is_binary(Regex) ->
+    #{
+        <<"aggregation_tag">> => Tag,
+        <<"index_name">> => Index,
+        <<"start_term">> => StartTerm,
+        <<"end_term">> => EndTerm,
+        <<"regular_expression">> => Regex
+    }.
+
 handle_query_error({error, {ok, _Code, ReplyHeaders, ErrorBody}}) ->
     MaybeJson =
         lists:member(
@@ -1060,7 +1132,6 @@ handle_query_error({error, {ok, _Code, ReplyHeaders, ErrorBody}}) ->
     end;
 handle_query_error({error, Error}) ->
     {error, Error}.
-
 
 -spec decode_query_body(binary()) -> query_output().
 decode_query_body(Body) ->
