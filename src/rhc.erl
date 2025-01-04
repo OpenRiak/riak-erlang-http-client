@@ -886,14 +886,14 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
     ::
         keys |
         raw_keys |
-        match_count |
-        key_count.
+        raw_count |
+        count.
 % -type term_accumulator() :: binary().
 -type term_based_accumulation()
     ::
-        term_with_keys |
-        term_with_matchcount |
-        term_with_keycount.
+        terms |
+        term_with_rawcount |
+        term_with_count.
 -type accumulation_option()
     ::
         key_based_accumualtation() |
@@ -914,11 +914,11 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
 -type keys_output()
     :: {keys, list(riakc_obj:key())}.
 -type count_output()
-    :: {key_count | match_count, non_neg_integer()}.
+    :: {count | raw_count, non_neg_integer()}.
 -type term_count_output()
-    :: {term_with_keycount | term_with_matchcount, non_neg_integer()}.
+    :: {term_with_count | term_with_rawcount, non_neg_integer()}.
 -type term_keys_output()
-    :: {term_with_keys, list({term(), riakc_obj:key()})}.
+    :: {terms, list({term(), riakc_obj:key()})}.
 -type error_output()
     :: {error, term()}.
 -type query_output()
@@ -1069,12 +1069,12 @@ decode_query_body(Body) ->
             {keys, KeyList};
         {struct, [{<<"raw_keys">>, KeyList}]} ->
             {raw_keys, KeyList};
-        {struct, [{<<"match_count">>, MatchCount}]} ->
-            {match_count, MatchCount};
-        {struct, [{<<"key_count">>, KeyCount}]} ->
-            {key_count, KeyCount};
-        {struct, [{<<"term_with_keys">>, TermKeyList}]} ->
-            {term_with_keys, TermKeyList}
+        {struct, [{<<"raw_count">>, MatchCount}]} ->
+            {raw_count, MatchCount};
+        {struct, [{<<"count">>, KeyCount}]} ->
+            {count, KeyCount};
+        {struct, [{<<"terms">>, TermKeyList}]} ->
+            {terms, TermKeyList}
     end.
 
 maybe_add_timeout(QueryDefn, Opts) ->
