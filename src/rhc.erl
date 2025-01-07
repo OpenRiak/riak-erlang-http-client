@@ -71,6 +71,8 @@
          filter_query/10,
          combo_query/7,
          make_query/4,
+         make_query_url/2,
+         handle_query_error/1,
          aae_merge_root/2,
          aae_merge_branches/3,
          aae_fetch_clocks/3,
@@ -951,7 +953,9 @@ range_query(Rhc, Bucket, Index, TermRange) ->
     regular_expression()|undefined,
     accumulation_option(),
     list(option())) ->
-        {ok, query_output()} | error_output().
+        {ok, query_output()}|
+        {ok, query_output(), continuation()}|
+        error_output().
 range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
     URI = make_query_url(Rhc, Bucket),
     Query =
@@ -973,7 +977,7 @@ range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
     QueryDefn = #{<<"query_list">> => [Query]},
     FullQuery =
         maybe_add_accopt(
-            maybe_add_timeout(QueryDefn, Opts),
+            maybe_add_options(QueryDefn, Opts),
                 AccOpt),
     EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
     Headers =
@@ -982,8 +986,13 @@ range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
             {?HEAD_CTYPE, "application/json"}
         ],
     case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
-        {ok, "200", _ReplyHeaders, ReplyBody} ->
-            {ok, decode_query_body(ReplyBody)};
+        {ok, "200", ReplyHeaders, ReplyBody} ->
+            case decode_continuation(ReplyHeaders) of
+                undefined ->
+                    {ok, decode_query_body(ReplyBody)};
+                Continuation when is_binary(Continuation) ->
+                    {ok, decode_query_body(ReplyBody), Continuation}
+            end;
         ErrorResponse ->
             handle_query_error(ErrorResponse)
     end.
@@ -999,7 +1008,9 @@ range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
     accumulation_term()|undefined,
     substitution_map()|undefined,
     list(option())) ->
-        {ok, query_output()}|error_output().
+        {ok, query_output()}|
+        {ok, query_output(), continuation()}|
+        error_output().
 filter_query(
     Rhc,
     Bucket,
@@ -1026,7 +1037,7 @@ filter_query(
         maybe_add_subs(
             maybe_add_accterm(
                 maybe_add_accopt(
-                    maybe_add_timeout(QueryDefn, Opts),
+                    maybe_add_options(QueryDefn, Opts),
                     AccOpt
                 ),
                 AccTerm
@@ -1040,8 +1051,13 @@ filter_query(
             {?HEAD_CTYPE, "application/json"}
         ],
     case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
-        {ok, "200", _ReplyHeaders, ReplyBody} ->
-            {ok, decode_query_body(ReplyBody)};
+        {ok, "200", ReplyHeaders, ReplyBody} ->
+            case decode_continuation(ReplyHeaders) of
+                undefined ->
+                    {ok, decode_query_body(ReplyBody)};
+                Continuation when is_binary(Continuation) ->
+                    {ok, decode_query_body(ReplyBody), Continuation}
+            end;
         ErrorResponse ->
             handle_query_error(ErrorResponse)
     end.
@@ -1066,7 +1082,7 @@ combo_query(Rhc, Bucket, AccOpt, SubsMap, AggrExpression, QueryList, Opts)
     FullQuery =
         maybe_add_subs(
             maybe_add_accopt(
-                maybe_add_timeout(QueryDefn, Opts),
+                maybe_add_options(QueryDefn, Opts),
                 AccOpt
             ),
             SubsMap
@@ -1133,9 +1149,18 @@ handle_query_error({error, {ok, _Code, ReplyHeaders, ErrorBody}}) ->
 handle_query_error({error, Error}) ->
     {error, Error}.
 
+-spec decode_continuation(list({string(), string()})) -> continuation().
+decode_continuation(ReplyHeaders) ->
+    case proplists:get_value("X-Riak-Continuation", ReplyHeaders, undefined) of
+        undefined ->
+            undefined;
+        ContString ->
+            iolist_to_binary(ContString)
+    end.
+
 -spec decode_query_body(binary()) -> query_output().
-decode_query_body(Body) ->
-    case mochijson2:decode(Body) of
+decode_query_body(ReplyBody) ->
+    case mochijson2:decode(ReplyBody) of
         {struct, [{<<"keys">>, KeyList}]} ->
             {keys, KeyList};
         {struct, [{<<"raw_keys">>, KeyList}]} ->
@@ -1145,19 +1170,33 @@ decode_query_body(Body) ->
         {struct, [{<<"count">>, KeyCount}]} ->
             {count, KeyCount};
         {struct, [{<<"terms">>, TermKeyList}]} ->
-            {terms, TermKeyList};
+            {terms, lists:map(fun({struct, [TK]}) -> TK end, TermKeyList)};
         {struct, [{<<"raw_terms">>, TermKeyList}]} ->
-            {raw_terms, TermKeyList}
+            {raw_terms, lists:map(fun({struct, [TK]}) -> TK end, TermKeyList)};
+        {struct, [{<<"term_with_count">>, {struct, TermCount}}]} ->
+            {term_with_count, TermCount};
+        {struct, [{<<"term_with_rawcount">>, {struct, TermCount}}]} ->
+            {term_with_rawcount, TermCount}
     end.
 
-maybe_add_timeout(QueryDefn, Opts) ->
-    case lists:keyfind(timeout, 1, Opts) of
-        {timeout, TimeoutSecs}
-                when is_integer(TimeoutSecs), TimeoutSecs > 0 ->
-            maps:put(<<"timeout">>, TimeoutSecs, QueryDefn);
-        _ ->
-            QueryDefn
-    end.
+
+maybe_add_options(QueryDefn, []) ->
+    QueryDefn;
+maybe_add_options(QueryDefn, [{timeout, TimeoutSecs}|Rest]) 
+        when is_integer(TimeoutSecs), TimeoutSecs > 0 ->
+    maybe_add_options(
+        maps:put(<<"timeout">>, TimeoutSecs, QueryDefn),
+        Rest);
+maybe_add_options(QueryDefn, [{max_results, MaxResults}|Rest])
+        when is_integer(MaxResults), MaxResults > 0 ->
+    maybe_add_options(
+        maps:put(<<"max_results">>, MaxResults, QueryDefn),
+        Rest);
+maybe_add_options(QueryDefn, [{continuation, Continuation}|Rest])
+        when is_binary(Continuation) ->
+    maybe_add_options(
+        maps:put(<<"continuation">>, Continuation, QueryDefn),
+        Rest).
 
 maybe_add_accopt(QueryDefn, undefined) ->
     QueryDefn;
@@ -1819,7 +1858,6 @@ make_query_url(Rhc, BucketAndType) ->
             "buckets", "/", mochiweb_util:quote_plus(Bucket),
             "/query"
             ]).
-
 
 
 %% @doc Generate a preflist url.
