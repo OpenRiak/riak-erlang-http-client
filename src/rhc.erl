@@ -895,6 +895,7 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
 % -type term_accumulator() :: binary().
 -type term_based_accumulation()
     ::
+        raw_terms |
         terms |
         term_with_rawcount |
         term_with_count.
@@ -916,14 +917,20 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
 -type aggregation_expression() :: binary().
 -type option()
     ::
-        {timeout, pos_integer()}.
+        {timeout, pos_integer()}|
+        {max_results, pos_integer()}|
+        {continuation, binary()}.
 
 -type keys_output()
     :: {keys, list(riakc_obj:key())}.
 -type count_output()
     :: {count | raw_count, non_neg_integer()}.
 -type term_count_output()
-    :: {term_with_count | term_with_rawcount, non_neg_integer()}.
+    ::
+        {
+            term_with_count | term_with_rawcount,
+            list({term(), non_neg_integer()})
+        }.
 -type term_keys_output()
     :: {terms, list({term(), riakc_obj:key()})}.
 -type error_output()
@@ -1066,7 +1073,7 @@ filter_query(
     rhc(),
     maybe_bucket(),
     accumulation_option(),
-    substitution_map(),
+    substitution_map()|undefined,
     aggregation_expression(),
     list(query_map()),
     list(option())) ->
