@@ -112,7 +112,9 @@ accumulate_header_info(<<?LOWER_USERMETA_PREFIX, _MetaKey/binary>>, OriginalKey,
         [{MetaKey, V}],
         MapAcc
     );
-accumulate_header_info(?LOWER_CTYPE, _OK, V, MapAcc) ->
+accumulate_header_info(?LOWER_CTYPE, OK, V, MapAcc) when is_binary(V) ->
+    accumulate_header_info(?LOWER_CTYPE, OK, binary_to_list(V), MapAcc);
+accumulate_header_info(?LOWER_CTYPE, _OK, V, MapAcc) when is_list(V) ->
     maps:put(?LOWER_CTYPE, mochiweb_util:parse_header(V), MapAcc);
 accumulate_header_info(?LOWER_VTAG, _OK, V, MapAcc) ->
     maps:put(?LOWER_VTAG, V, MapAcc);
