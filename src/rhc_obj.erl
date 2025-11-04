@@ -82,7 +82,7 @@ make_rspheader_map(Headers) ->
                 end,
             accumulate_header_info(
                 string:lowercase(BinHeadKey),
-                HeadKey,
+                BinHeadKey,
                 HeadVal,
                 AccMap
             )
