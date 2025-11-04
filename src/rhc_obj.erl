@@ -28,6 +28,11 @@
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
+-include_lib("stdlib/include/assert.hrl").
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %% HTTP -> riakc_obj
 
@@ -121,8 +126,23 @@ accumulate_header_info(_DiscardIdx, _OK, _Value, MapAcc) ->
     MapAcc.
 
 headers_to_metadata(HeaderMap) ->
-    UserMeta =
-        dict:from_list(maps:get(<<?LOWER_USERMETA_PREFIX>>, HeaderMap, [])),
+    UserMetaKVL = maps:get(<<?LOWER_USERMETA_PREFIX>>, HeaderMap, []),
+    UserMeta = 
+        lists:foldl(
+            fun({K, V}, Acc) ->
+                VBin =
+                    case V of
+                        VL when is_list(VL) ->
+                            list_to_binary(VL);
+                        VB when is_binary(VB) ->
+                            VB
+                    end,
+                riakc_obj:set_user_metadata_entry(Acc, {K, VBin})
+            end,
+            dict:new(),
+            UserMetaKVL
+        ),
+    
 
     {CType,_} = maps:get(?LOWER_CTYPE, HeaderMap),
     CUserMeta = dict:store(?MD_CTYPE, CType, UserMeta),
@@ -153,7 +173,7 @@ headers_to_metadata(HeaderMap) ->
     end,
     case extract_indexes(HeaderMap) of
         [] -> LinkMeta;
-        Entries -> dict:store(?MD_INDEX, Entries, LinkMeta)
+        Entries -> dict:store(?MD_INDEX, lists:reverse(Entries), LinkMeta)
     end.
 
 
@@ -172,19 +192,22 @@ extract_links(HeaderMap) ->
     lists:foldl(Extractor, [], string:tokens(LinkHeader, ",")).
 
 extract_indexes(HeaderMap) ->
-    lists:map(
-        fun({F, V}) ->
-            {F, decode_index_value(F, V)}
-        end,
-        maps:get(<<?LOWER_INDEX_PREFIX>>, HeaderMap, [])
+    lists:flatten(
+        lists:map(
+            fun({F, V}) ->
+                decode_index_value(F, V)
+            end,
+            maps:get(<<?LOWER_INDEX_PREFIX>>, HeaderMap, [])
+        )
     ).
 
 decode_index_value(K, V) ->
+    TL = lists:reverse(string:split(V, ", ", all)),
     case lists:last(string:lexemes(K, "_")) of
         <<"bin">> ->
-            list_to_binary(V);
+            lists:map(fun(T) -> {K, list_to_binary(T)} end, TL);
         <<"int">> ->
-            list_to_integer(V)
+            lists:map(fun(T) -> {K, list_to_integer(T)} end, TL)
     end.
 
 serialize_riakc_obj(Rhc, Object) ->
@@ -249,3 +272,56 @@ make_body(Object) ->
         Val when is_binary(Val) -> 
             Val
     end.
+
+-ifdef(TEST).
+
+headers_test() ->
+    HeaderList =
+        [
+            {"x-riak-index-field1_bin", "I0001, I0002"},
+            {"x-riak-index-field2_int", "1, 2"},
+            {"X-Riak-Index-field3_bin", "I0003"},
+            {"x-riak-meta-K0001", "V0001"},
+            {"x-riak-meta-K0002", "V0002"},
+            {"ETag", "abc123"},
+            {"content-type", "application/json"}
+        ],
+    HeaderMap = make_rspheader_map(HeaderList),
+    Metadata = headers_to_metadata(HeaderMap),
+    ExpectedMetadata =
+        dict:from_list(
+            [
+                {
+                    <<"X-Riak-Meta">>,
+                    [
+                        {<<"K0001">>,<<"V0001">>},
+                        {<<"K0002">>,<<"V0002">>}
+                    ]
+                },
+                {
+                    <<"index">>,
+                    [
+                        {<<"field1_bin">>,<<"I0001">>},
+                        {<<"field1_bin">>,<<"I0002">>},
+                        {<<"field2_int">>, 1},
+                        {<<"field2_int">>, 2},
+                        {<<"field3_bin">>,<<"I0003">>}
+                    ]
+                },
+                {
+                    <<"content-type">>,
+                    "application/json"
+                },
+                {
+                    <<"X-Riak-VTag">>,
+                    "abc123"
+                }
+            ]
+        ),
+    ?assertMatch(
+        ExpectedMetadata,
+        Metadata
+    ).
+
+
+-endif.
