@@ -173,7 +173,7 @@ headers_to_metadata(HeaderMap) ->
     end,
     case extract_indexes(HeaderMap) of
         [] -> LinkMeta;
-        Entries -> dict:store(?MD_INDEX, lists:reverse(Entries), LinkMeta)
+        Entries -> dict:store(?MD_INDEX, Entries, LinkMeta)
     end.
 
 
@@ -202,7 +202,7 @@ extract_indexes(HeaderMap) ->
     ).
 
 decode_index_value(K, V) ->
-    TL = lists:reverse(string:split(V, ", ", all)),
+    TL = string:split(V, ", ", all),
     case lists:last(string:lexemes(K, "_")) of
         <<"bin">> ->
             lists:map(fun(T) -> {K, list_to_binary(T)} end, TL);
@@ -301,11 +301,11 @@ headers_test() ->
                 {
                     <<"index">>,
                     [
-                        {<<"field1_bin">>,<<"I0001">>},
-                        {<<"field1_bin">>,<<"I0002">>},
+                        {<<"field3_bin">>,<<"I0003">>},
                         {<<"field2_int">>, 1},
                         {<<"field2_int">>, 2},
-                        {<<"field3_bin">>,<<"I0003">>}
+                        {<<"field1_bin">>,<<"I0001">>},
+                        {<<"field1_bin">>,<<"I0002">>}
                     ]
                 },
                 {
