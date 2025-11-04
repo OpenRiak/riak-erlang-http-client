@@ -24,9 +24,7 @@
 %%      translating between HTTP (ibrowse) data and riakc_obj objects.
 -module(rhc_obj).
 
--export([make_riakc_obj/4,
-         serialize_riakc_obj/2,
-         ctype_from_headers/1]).
+-export([make_riakc_obj/4, serialize_riakc_obj/2, ctype_from_headers/1]).
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
@@ -34,112 +32,160 @@
 %% HTTP -> riakc_obj
 
 make_riakc_obj(Bucket, Key, Headers, Body) ->
-    Vclock = base64:decode(proplists:get_value(?HEAD_VCLOCK, Headers, "")),
-    case ctype_from_headers(Headers) of
+    HeaderMap = make_rspheader_map(Headers),
+    Vclock = maps:get(?LOWER_VCLOCK, HeaderMap, ""),
+    case maps:get(?LOWER_CTYPE, HeaderMap) of
         {"multipart/mixed", Args} ->
             {"boundary", Boundary} = proplists:lookup("boundary", Args),
             riakc_obj:new_obj(
-              Bucket, Key, Vclock,
-              decode_siblings(Boundary, Body));
+                Bucket,
+                Key,
+                Vclock,
+                decode_siblings(Boundary, Body)
+            );
         {_CType, _} ->
             riakc_obj:new_obj(
-              Bucket, Key, Vclock,
-              [{headers_to_metadata(Headers), Body}])
+                Bucket,
+                Key,
+                Vclock,
+                [{headers_to_metadata(HeaderMap), Body}]
+            )
     end.
 
 ctype_from_headers(Headers) ->
     mochiweb_util:parse_header(
       proplists:get_value(?HEAD_CTYPE, Headers)).
 
-vtag_from_headers(Headers) ->
-    %% non-sibling uses ETag, sibling uses Etag
-    %% (note different capitalization on 't')
-    case proplists:lookup("ETag", Headers) of
-        {"ETag", ETag} -> ETag;
-        none -> proplists:get_value("Etag", Headers)
-    end.
-
-
-lastmod_from_headers(Headers) ->
-    case proplists:get_value("Last-Modified", Headers) of
-        undefined ->
-            undefined;
-        RfcDate ->
-            GS = calendar:datetime_to_gregorian_seconds(
-                   httpd_util:convert_request_date(RfcDate)),
-            ES = GS-62167219200, %% gregorian seconds of the epoch
-            {ES div 1000000, % Megaseconds
-             ES rem 1000000, % Seconds
-             0}              % Microseconds
-    end.
-
 decode_siblings(Boundary, <<"\r\n",SibBody/binary>>) ->
     decode_siblings(Boundary, SibBody);
 decode_siblings(Boundary, SibBody) ->
-    Parts = webmachine_multipart:get_all_parts(
-              SibBody, Boundary),
-    [ {headers_to_metadata([ {binary_to_list(H), binary_to_list(V)}
-                             || {H, V} <- Headers ]),
-       element(1, split_binary(Body, size(Body)))}
-      || {_, {_, Headers}, Body} <- Parts ].
+    lists:map(
+        fun({_, {_, Headers}, Body}) ->
+            HeaderMap = make_rspheader_map(Headers),
+            {
+                headers_to_metadata(HeaderMap),
+                element(1, split_binary(Body, size(Body)))
+            }
+        end,
+        webmachine_multipart:get_all_parts(SibBody, Boundary)
+    ).
 
-headers_to_metadata(Headers) ->
-    UserMeta = extract_user_metadata(Headers),
+make_rspheader_map(Headers) ->
+    lists:foldl(
+        fun({HeadKey, HeadVal}, AccMap) ->
+            BinHeadKey =
+                case HeadKey of
+                    HeadKey when is_binary(HeadKey) ->
+                        HeadKey;
+                    HeadKey when is_list(HeadKey) ->
+                        list_to_binary(HeadKey)
+                end,
+            accumulate_header_info(
+                string:lowercase(BinHeadKey),
+                HeadKey,
+                HeadVal,
+                AccMap
+            )
+        end,
+        maps:new(),
+        Headers
+    ).
 
-    {CType,_} = ctype_from_headers(Headers),
+accumulate_header_info(<<?LOWER_INDEX_PREFIX, _Field/binary>>, OriginalKey, T, MapAcc) ->
+    <<_Prefix:13/binary, Field/binary>> = OriginalKey,
+    maps:update_with(
+        <<?LOWER_INDEX_PREFIX>>,
+        fun(Indices) -> [{Field, T}|Indices] end,
+        [{Field, T}],
+        MapAcc
+    );
+accumulate_header_info(<<?LOWER_USERMETA_PREFIX, _MetaKey/binary>>, OriginalKey, V, MapAcc) ->
+    <<_Prefix:12/binary, MetaKey/binary>> = OriginalKey,
+    maps:update_with(
+        <<?LOWER_USERMETA_PREFIX>>,
+        fun(Indices) -> [{MetaKey, V}|Indices] end,
+        [{MetaKey, V}],
+        MapAcc
+    );
+accumulate_header_info(?LOWER_CTYPE, _OK, V, MapAcc) ->
+    maps:put(?LOWER_CTYPE, mochiweb_util:parse_header(V), MapAcc);
+accumulate_header_info(?LOWER_VTAG, _OK, V, MapAcc) ->
+    maps:put(?LOWER_VTAG, V, MapAcc);
+accumulate_header_info(?LOWER_VCLOCK, _OK, VC, MapAcc) ->
+    maps:put(?LOWER_VCLOCK, base64:decode(VC), MapAcc);
+accumulate_header_info(?LOWER_LINK, _OK, V, MapAcc) ->
+    maps:put(?LOWER_LINK, V, MapAcc);
+accumulate_header_info(?LOWER_LMD, _OK, V, MapAcc) ->
+    maps:put(?LOWER_LMD, V, MapAcc);
+accumulate_header_info(_DiscardIdx, _OK, _Value, MapAcc) ->
+    MapAcc.
+
+headers_to_metadata(HeaderMap) ->
+    UserMeta =
+        dict:from_list(maps:get(<<?LOWER_USERMETA_PREFIX>>, HeaderMap, [])),
+
+    {CType,_} = maps:get(?LOWER_CTYPE, HeaderMap),
     CUserMeta = dict:store(?MD_CTYPE, CType, UserMeta),
 
-    VTag = vtag_from_headers(Headers),
+    VTag = maps:get(?LOWER_VTAG, HeaderMap),
     VCUserMeta = dict:store(?MD_VTAG, VTag, CUserMeta),
 
-    LVCUserMeta = case lastmod_from_headers(Headers) of
-                      undefined ->
-                          VCUserMeta;
-                      LastMod ->
-                          dict:store(?MD_LASTMOD, LastMod, VCUserMeta)
-                  end,
+    LVCUserMeta =
+        case maps:get(?LOWER_LMD, HeaderMap, undefined) of
+            undefined ->
+                VCUserMeta;
+            RfcDate ->
+                GS =
+                    calendar:datetime_to_gregorian_seconds(
+                        httpd_util:convert_request_date(RfcDate)
+                    ),
+                ES = GS-62167219200, %% gregorian seconds of the epoch
+                dict:store(
+                    ?MD_LASTMOD,
+                    {ES div 1000000, ES rem 1000000, 0},
+                    VCUserMeta
+                )
+        end,
 
-    LinkMeta = case extract_links(Headers) of
+    LinkMeta = case extract_links(HeaderMap) of
         [] -> LVCUserMeta;
         Links -> dict:store(?MD_LINKS, Links, LVCUserMeta)
     end,
-    case extract_indexes(Headers) of
+    case extract_indexes(HeaderMap) of
         [] -> LinkMeta;
         Entries -> dict:store(?MD_INDEX, Entries, LinkMeta)
     end.
 
-extract_user_metadata(Headers) ->
-    lists:foldl(fun extract_user_metadata/2, dict:new(), Headers).
 
-extract_user_metadata({?HEAD_USERMETA_PREFIX++K, V}, Dict) ->
-    riakc_obj:set_user_metadata_entry(Dict, {K, V});
-extract_user_metadata(_, D) -> D.
-
-extract_links(Headers) ->
+extract_links(HeaderMap) ->
     {ok, Re} = re:compile("</[^/]+/([^/]+)/([^/]+)>; *riaktag=\"(.*)\""),
-    Extractor = fun(L, Acc) ->
-                        case re:run(L, Re, [{capture,[1,2,3],binary}]) of
-                            {match, [Bucket, Key,Tag]} ->
-                                [{{Bucket,Key},Tag}|Acc];
-                            nomatch ->
-                                Acc
-                        end
-                end,
-    LinkHeader = proplists:get_value(?HEAD_LINK, Headers, []),
+    Extractor =
+        fun(L, Acc) ->
+                case re:run(L, Re, [{capture,[1,2,3],binary}]) of
+                    {match, [Bucket, Key,Tag]} ->
+                        [{{Bucket,Key},Tag}|Acc];
+                    nomatch ->
+                        Acc
+                end
+        end,
+    LinkHeader = maps:get(?HEAD_LINK, HeaderMap, []),
     lists:foldl(Extractor, [], string:tokens(LinkHeader, ",")).
 
-extract_indexes(Headers) ->
-    [ {list_to_binary(K), decode_index_value(K,V)} || {?HEAD_INDEX_PREFIX++K, V} <- Headers].
+extract_indexes(HeaderMap) ->
+    lists:map(
+        fun({F, V}) ->
+            {F, decode_index_value(F, V)}
+        end,
+        maps:get(<<?LOWER_INDEX_PREFIX>>, HeaderMap, [])
+    ).
 
 decode_index_value(K, V) ->
-    case lists:last(string:tokens(K, "_")) of
-        "bin" ->
+    case lists:last(string:lexemes(K, "_")) of
+        <<"bin">> ->
             list_to_binary(V);
-        "int" ->
+        <<"int">> ->
             list_to_integer(V)
     end.
-
-%% riakc_obj -> HTTP
 
 serialize_riakc_obj(Rhc, Object) ->
     {make_headers(Rhc, Object), make_body(Object)}.

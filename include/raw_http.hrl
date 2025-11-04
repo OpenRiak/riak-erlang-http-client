@@ -40,6 +40,14 @@
 -define(HEAD_INDEX_PREFIX,    "X-Riak-Index-").
 -define(HEAD_IF_NOT_MODIFIED, "X-Riak-If-Not-Modified").
 
+-define(LOWER_CTYPE,           <<"content-type">>).
+-define(LOWER_VCLOCK,          <<"x-riak-vclock">>).
+-define(LOWER_LINK,            <<"link">>).
+-define(LOWER_USERMETA_PREFIX, "x-riak-meta-").
+-define(LOWER_INDEX_PREFIX,    "x-riak-index-").
+-define(LOWER_VTAG,            <<"etag">>).
+-define(LOWER_LMD,             <<"last-modified">>).
+
 %%======================================================================
 %% JSON keys/values
 %%======================================================================
