@@ -85,10 +85,17 @@ make_rspheader_map(Headers) ->
                     HeadKey when is_list(HeadKey) ->
                         list_to_binary(HeadKey)
                 end,
+            ListHeadVal =
+                case HeadVal of
+                    HeadVal when is_binary(HeadVal) ->
+                        binary_to_list(HeadVal);
+                    HeadVal when is_list(HeadVal) ->
+                        HeadVal
+                end,
             accumulate_header_info(
                 string:lowercase(BinHeadKey),
                 BinHeadKey,
-                HeadVal,
+                ListHeadVal,
                 AccMap
             )
         end,
@@ -112,9 +119,7 @@ accumulate_header_info(<<?LOWER_USERMETA_PREFIX, _MetaKey/binary>>, OriginalKey,
         [{MetaKey, V}],
         MapAcc
     );
-accumulate_header_info(?LOWER_CTYPE, OK, V, MapAcc) when is_binary(V) ->
-    accumulate_header_info(?LOWER_CTYPE, OK, binary_to_list(V), MapAcc);
-accumulate_header_info(?LOWER_CTYPE, _OK, V, MapAcc) when is_list(V) ->
+accumulate_header_info(?LOWER_CTYPE, _OK, V, MapAcc) ->
     maps:put(?LOWER_CTYPE, mochiweb_util:parse_header(V), MapAcc);
 accumulate_header_info(?LOWER_VTAG, _OK, V, MapAcc) ->
     maps:put(?LOWER_VTAG, V, MapAcc);
