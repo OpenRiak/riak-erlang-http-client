@@ -66,6 +66,13 @@
          get_preflist/3,
          rt_enqueue/3,
          rt_enqueue/4,
+         range_query/4,
+         range_query/7,
+         filter_query/10,
+         combo_query/7,
+         make_query/4,
+         make_query_url/2,
+         handle_query_error/1,
          aae_merge_root/2,
          aae_merge_branches/3,
          aae_fetch_clocks/3,
@@ -876,6 +883,343 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
             {error, Error}
     end.
 
+% -type aggregation_tag() :: pos_integer().
+-type index_name() :: binary().
+-type index_value() :: binary().
+-type key_based_accumualtation()
+    ::
+        keys |
+        raw_keys |
+        raw_count |
+        count.
+% -type term_accumulator() :: binary().
+-type term_based_accumulation()
+    ::
+        raw_terms |
+        terms |
+        term_with_rawcount |
+        term_with_count.
+-type accumulation_option()
+    ::
+        key_based_accumualtation() |
+        term_based_accumulation().
+
+-type accumulation_term() :: binary().
+
+-type substitution_map()
+    :: #{binary() => binary()}.
+
+-type query_map() :: #{binary() => term()}.
+
+-type regular_expression() :: binary().
+-type eval_expression() :: binary().
+-type filter_expression() :: binary().
+-type aggregation_expression() :: binary().
+-type option()
+    ::
+        {timeout, pos_integer()}|
+        {max_results, pos_integer()}|
+        {continuation, binary()}.
+
+-type keys_output()
+    :: {keys, list(riakc_obj:key())}.
+-type count_output()
+    :: {count | raw_count, non_neg_integer()}.
+-type term_count_output()
+    ::
+        {
+            term_with_count | term_with_rawcount,
+            list({term(), non_neg_integer()})
+        }.
+-type term_keys_output()
+    :: {terms, list({term(), riakc_obj:key()})}.
+-type error_output()
+    :: {error, term()}.
+-type query_output()
+    ::
+        keys_output() |
+        count_output() |
+        term_count_output() |
+        term_keys_output().
+
+-spec range_query(
+    rhc(),
+    maybe_bucket(),
+    index_name(),
+    {index_value(), index_value()}) ->
+        {ok, keys_output()} | error_output().
+range_query(Rhc, Bucket, Index, TermRange) ->
+    range_query(
+        Rhc, Bucket, Index, TermRange, undefined, keys, []).
+
+-spec range_query(
+    rhc(),
+    maybe_bucket(),
+    index_name(),
+    {index_value(), index_value()},
+    regular_expression()|undefined,
+    accumulation_option(),
+    list(option())) ->
+        {ok, query_output()}|
+        {ok, query_output(), continuation()}|
+        error_output().
+range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
+    URI = make_query_url(Rhc, Bucket),
+    Query =
+        case Regex of
+            ActualRegex when is_binary(ActualRegex) ->
+                #{
+                    <<"index_name">> => Index,
+                    <<"start_term">> => ST,
+                    <<"end_term">> => ET,
+                    <<"regular_expression">> => Regex
+                };
+            undefined ->
+                #{
+                    <<"index_name">> => Index,
+                    <<"start_term">> => ST,
+                    <<"end_term">> => ET
+                }
+        end,
+    QueryDefn = #{<<"query_list">> => [Query]},
+    FullQuery =
+        maybe_add_accopt(
+            maybe_add_options(QueryDefn, Opts),
+                AccOpt),
+    EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
+    Headers =
+        [
+            {?HEAD_CLIENT, client_id(Rhc, Opts)},
+            {?HEAD_CTYPE, "application/json"}
+        ],
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+        {ok, "200", ReplyHeaders, ReplyBody} ->
+            case decode_continuation(ReplyHeaders) of
+                undefined ->
+                    {ok, decode_query_body(ReplyBody)};
+                Continuation when is_binary(Continuation) ->
+                    {ok, decode_query_body(ReplyBody), Continuation}
+            end;
+        ErrorResponse ->
+            handle_query_error(ErrorResponse)
+    end.
+
+-spec filter_query(
+    rhc(),
+    maybe_bucket(),
+    index_name(),
+    {index_value(), index_value()},
+    eval_expression(),
+    filter_expression(),
+    accumulation_option(),
+    accumulation_term()|undefined,
+    substitution_map()|undefined,
+    list(option())) ->
+        {ok, query_output()}|
+        {ok, query_output(), continuation()}|
+        error_output().
+filter_query(
+    Rhc,
+    Bucket,
+    Index,
+    {StartTerm, EndTerm},
+    EvalExpr,
+    FilterExpr,
+    AccOpt,
+    AccTerm,
+    SubsMap,
+    Opts)
+        when is_binary(EvalExpr), is_binary(FilterExpr) ->
+    URI = make_query_url(Rhc, Bucket),
+    Query =
+        #{
+            <<"index_name">> => Index,
+            <<"start_term">> => StartTerm,
+            <<"end_term">> => EndTerm,
+            <<"evaluation_expression">> => EvalExpr,
+            <<"filter_expression">> => FilterExpr
+        },
+    QueryDefn = #{<<"query_list">> => [Query]},
+    FullQuery =
+        maybe_add_subs(
+            maybe_add_accterm(
+                maybe_add_accopt(
+                    maybe_add_options(QueryDefn, Opts),
+                    AccOpt
+                ),
+                AccTerm
+            ),
+            SubsMap
+        ),
+    EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
+    Headers =
+        [
+            {?HEAD_CLIENT, client_id(Rhc, Opts)},
+            {?HEAD_CTYPE, "application/json"}
+        ],
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+        {ok, "200", ReplyHeaders, ReplyBody} ->
+            case decode_continuation(ReplyHeaders) of
+                undefined ->
+                    {ok, decode_query_body(ReplyBody)};
+                Continuation when is_binary(Continuation) ->
+                    {ok, decode_query_body(ReplyBody), Continuation}
+            end;
+        ErrorResponse ->
+            handle_query_error(ErrorResponse)
+    end.
+
+-spec combo_query(
+    rhc(),
+    maybe_bucket(),
+    accumulation_option(),
+    substitution_map()|undefined,
+    aggregation_expression(),
+    list(query_map()),
+    list(option())) ->
+        {ok, query_output()}|error_output().
+combo_query(Rhc, Bucket, AccOpt, SubsMap, AggrExpression, QueryList, Opts)
+        when AccOpt == keys; AccOpt == raw_keys; AccOpt == raw_count ->
+    URI = make_query_url(Rhc, Bucket),
+    QueryDefn =
+        #{
+            <<"query_list">> => QueryList,
+            <<"aggregation_expression">> => AggrExpression
+        },
+    FullQuery =
+        maybe_add_subs(
+            maybe_add_accopt(
+                maybe_add_options(QueryDefn, Opts),
+                AccOpt
+            ),
+            SubsMap
+        ),
+    EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
+    Headers =
+        [
+            {?HEAD_CLIENT, client_id(Rhc, Opts)},
+            {?HEAD_CTYPE, "application/json"}
+        ],
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+        {ok, "200", _ReplyHeaders, ReplyBody} ->
+            {ok, decode_query_body(ReplyBody)};
+        ErrorResponse ->
+            handle_query_error(ErrorResponse)
+    end.
+
+-spec make_query(
+    pos_integer(), index_name(), {index_value(), index_value()},
+    undefined|regular_expression()|{eval_expression(), filter_expression()}) ->
+        query_map().
+make_query(Tag, Index, {StartTerm, EndTerm}, undefined) ->
+    #{
+        <<"aggregation_tag">> => Tag,
+        <<"index_name">> => Index,
+        <<"start_term">> => StartTerm,
+        <<"end_term">> => EndTerm
+    };
+make_query(Tag, Index, {StartTerm, EndTerm}, {Eval, Filter}) ->
+    #{
+        <<"aggregation_tag">> => Tag,
+        <<"index_name">> => Index,
+        <<"start_term">> => StartTerm,
+        <<"end_term">> => EndTerm,
+        <<"evaluation_expression">> => Eval,
+        <<"filter_expression">> => Filter
+    };
+make_query(Tag, Index, {StartTerm, EndTerm}, Regex) when is_binary(Regex) ->
+    #{
+        <<"aggregation_tag">> => Tag,
+        <<"index_name">> => Index,
+        <<"start_term">> => StartTerm,
+        <<"end_term">> => EndTerm,
+        <<"regular_expression">> => Regex
+    }.
+
+handle_query_error({error, {ok, _Code, ReplyHeaders, ErrorBody}}) ->
+    MaybeJson =
+        lists:member(
+            {"Content-Type","application/json"},
+            ReplyHeaders
+        ),
+    case MaybeJson of
+        true ->
+            case mochijson2:decode(ErrorBody) of
+                {struct,[{<<"error">>, ErrorMessage}]} ->
+                    {error, ErrorMessage};
+                OtherJSONError ->
+                    {error, OtherJSONError}
+            end;
+        false ->
+            {error, ErrorBody}
+    end;
+handle_query_error({error, Error}) ->
+    {error, Error}.
+
+-spec decode_continuation(list({string(), string()})) -> continuation().
+decode_continuation(ReplyHeaders) ->
+    case proplists:get_value("X-Riak-Continuation", ReplyHeaders, undefined) of
+        undefined ->
+            undefined;
+        ContString ->
+            iolist_to_binary(ContString)
+    end.
+
+-spec decode_query_body(binary()) -> query_output().
+decode_query_body(ReplyBody) ->
+    case mochijson2:decode(ReplyBody) of
+        {struct, [{<<"keys">>, KeyList}]} ->
+            {keys, KeyList};
+        {struct, [{<<"raw_keys">>, KeyList}]} ->
+            {raw_keys, KeyList};
+        {struct, [{<<"raw_count">>, MatchCount}]} ->
+            {raw_count, MatchCount};
+        {struct, [{<<"count">>, KeyCount}]} ->
+            {count, KeyCount};
+        {struct, [{<<"terms">>, TermKeyList}]} ->
+            {terms, lists:map(fun({struct, [TK]}) -> TK end, TermKeyList)};
+        {struct, [{<<"raw_terms">>, TermKeyList}]} ->
+            {raw_terms, lists:map(fun({struct, [TK]}) -> TK end, TermKeyList)};
+        {struct, [{<<"term_with_count">>, {struct, TermCount}}]} ->
+            {term_with_count, TermCount};
+        {struct, [{<<"term_with_rawcount">>, {struct, TermCount}}]} ->
+            {term_with_rawcount, TermCount}
+    end.
+
+
+maybe_add_options(QueryDefn, []) ->
+    QueryDefn;
+maybe_add_options(QueryDefn, [{timeout, TimeoutSecs}|Rest]) 
+        when is_integer(TimeoutSecs), TimeoutSecs > 0 ->
+    maybe_add_options(
+        maps:put(<<"timeout">>, TimeoutSecs, QueryDefn),
+        Rest);
+maybe_add_options(QueryDefn, [{max_results, MaxResults}|Rest])
+        when is_integer(MaxResults), MaxResults > 0 ->
+    maybe_add_options(
+        maps:put(<<"max_results">>, MaxResults, QueryDefn),
+        Rest);
+maybe_add_options(QueryDefn, [{continuation, Continuation}|Rest])
+        when is_binary(Continuation) ->
+    maybe_add_options(
+        maps:put(<<"continuation">>, Continuation, QueryDefn),
+        Rest).
+
+maybe_add_accopt(QueryDefn, undefined) ->
+    QueryDefn;
+maybe_add_accopt(QueryDefn, AccOpt) ->
+    maps:put(<<"accumulation_option">>, atom_to_binary(AccOpt), QueryDefn).
+
+maybe_add_accterm(QueryDefn, undefined) ->
+    QueryDefn;
+maybe_add_accterm(QueryDefn, Term) when is_binary(Term) ->
+    maps:put(<<"accumulation_term">>, Term, QueryDefn).
+
+maybe_add_subs(QueryDefn, undefined) ->
+    QueryDefn;
+maybe_add_subs(QueryDefn, SubsMap) when is_map(SubsMap) ->
+    maps:put(<<"substitutions">>, SubsMap, QueryDefn).
+
 %% @equiv put(Rhc, Object, [])
 put(Rhc, Object) ->
     put(Rhc, Object, []).
@@ -1510,6 +1854,18 @@ make_url(Rhc, BucketAndType, Key, Query) ->
            Key =/= undefined andalso not IsKeys andalso not IsProps ],
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
         ]).
+
+-spec make_query_url(rhc(), maybe_bucket()) -> iolist().
+make_query_url(Rhc, BucketAndType) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    lists:flatten(
+        [
+            root_url(Rhc),
+            [ ["types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+            "buckets", "/", mochiweb_util:quote_plus(Bucket),
+            "/query"
+            ]).
+
 
 %% @doc Generate a preflist url.
 -spec make_preflist_url(rhc(), maybe_bucket(), riakc_obj:key()) -> iolist().
