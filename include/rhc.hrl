@@ -20,8 +20,9 @@
 %%
 %% -------------------------------------------------------------------
 
--define(DEFAULT_TIMEOUT, 60000).
--define(AAEFOLD_TIMEOUT, 3600000).
+-define(DEFAULT_TIMEOUT, 60000). % 1m
+-define(QUERY_TIMEOUT, 600000). % 10m
+-define(AAEFOLD_TIMEOUT, 3600000). % 1h
 
 -record(rhc, {ip,
               port,

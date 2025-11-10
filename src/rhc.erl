@@ -986,13 +986,14 @@ range_query(Rhc, Bucket, Index, {ST, ET}, Regex, AccOpt, Opts) ->
         maybe_add_accopt(
             maybe_add_options(QueryDefn, Opts),
                 AccOpt),
+    TO = set_query_client_timeout(FullQuery),
     EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
     Headers =
         [
             {?HEAD_CLIENT, client_id(Rhc, Opts)},
             {?HEAD_CTYPE, "application/json"}
         ],
-    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc, TO) of
         {ok, "200", ReplyHeaders, ReplyBody} ->
             case decode_continuation(ReplyHeaders) of
                 undefined ->
@@ -1051,13 +1052,14 @@ filter_query(
             ),
             SubsMap
         ),
+    TO = set_query_client_timeout(FullQuery),
     EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
     Headers =
         [
             {?HEAD_CLIENT, client_id(Rhc, Opts)},
             {?HEAD_CTYPE, "application/json"}
         ],
-    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc, TO) of
         {ok, "200", ReplyHeaders, ReplyBody} ->
             case decode_continuation(ReplyHeaders) of
                 undefined ->
@@ -1094,13 +1096,14 @@ combo_query(Rhc, Bucket, AccOpt, SubsMap, AggrExpression, QueryList, Opts)
             ),
             SubsMap
         ),
+    TO = set_query_client_timeout(FullQuery),
     EncodedQuery = iolist_to_binary(mochijson2:encode(FullQuery)),
     Headers =
         [
             {?HEAD_CLIENT, client_id(Rhc, Opts)},
             {?HEAD_CTYPE, "application/json"}
         ],
-    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc) of
+    case request(post, URI, ["200"], Headers, EncodedQuery, Rhc, TO) of
         {ok, "200", _ReplyHeaders, ReplyBody} ->
             {ok, decode_query_body(ReplyBody)};
         ErrorResponse ->
@@ -1219,6 +1222,17 @@ maybe_add_subs(QueryDefn, undefined) ->
     QueryDefn;
 maybe_add_subs(QueryDefn, SubsMap) when is_map(SubsMap) ->
     maps:put(<<"substitutions">>, SubsMap, QueryDefn).
+
+%% @doc return timeout in milliseconds
+%% Should be default or the query timeout + 1s
+-spec set_query_client_timeout(#{}) -> pos_integer().
+set_query_client_timeout(QueryDefn) ->
+    case maps:get(<<"timeout">>, QueryDefn, undefined) of
+        undefined ->
+            ?QUERY_TIMEOUT;
+        TimeoutSecs when is_integer(TimeoutSecs) ->
+            (TimeoutSecs + 1) * 1000
+    end.
 
 %% @equiv put(Rhc, Object, [])
 put(Rhc, Object) ->
