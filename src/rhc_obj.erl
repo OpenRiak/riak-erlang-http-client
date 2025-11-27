@@ -28,7 +28,6 @@
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
--include_lib("stdlib/include/assert.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -196,7 +195,7 @@ extract_links(HeaderMap) ->
                 end
         end,
     LinkHeader = maps:get(?HEAD_LINK, HeaderMap, []),
-    lists:foldl(Extractor, [], string:tokens(LinkHeader, ",")).
+    lists:foldl(Extractor, [], string:lexemes(LinkHeader, ",")).
 
 extract_indexes(HeaderMap) ->
     lists:flatten(
