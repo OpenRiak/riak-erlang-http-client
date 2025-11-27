@@ -1709,7 +1709,11 @@ update_type(Rhc, BucketAndType, Key, {Type, Op, Context}, Options) ->
         {ok, "201", Headers, RBody} ->
             %% Riak-assigned key
             Url = proplists:get_value("Location", Headers),
-            Key = unicode:characters_to_binary(lists:last(string:tokens(Url, "/")), utf8),
+            Key =
+                unicode:characters_to_binary(
+                    lists:last(string:lexemes(Url, "/")),
+                    utf8
+                ),
             case proplists:get_value("Content-Length", Headers) of
                 "0" ->
                     {ok, Key};
