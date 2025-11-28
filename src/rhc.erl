@@ -869,7 +869,8 @@ aae_list_buckets(Rhc) ->
     aae_list_buckets(Rhc, Url).
 
 -spec aae_list_buckets(
-    rhc(), pos_integer()|string())  -> {ok, list(maybe_bucket())}.
+    rhc(), pos_integer()|string())  ->
+        {ok, list(maybe_bucket())}|{error, any()}.
 aae_list_buckets(Rhc, MinNVal) when is_integer(MinNVal), MinNVal > 0 ->
     Url = lists:flatten([root_url(Rhc), "aaebucketlist",
                             "?filter=", integer_to_list(MinNVal)]),
