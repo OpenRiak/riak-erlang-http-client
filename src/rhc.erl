@@ -2028,7 +2028,6 @@ encode_change_method({job, JobID}) ->
 encode_change_method(_) ->
     [].
 
-
 %% @doc Generate a counter url.
 -spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
 make_counter_url(Rhc, Bucket, Key, Query) ->
@@ -2056,12 +2055,39 @@ request(Method, Url, Expect, Headers, Body, Rhc) ->
     request(Method, Url, Expect, Headers, Body, Rhc, ?DEFAULT_TIMEOUT).
 
 request(Method, Url, Expect, Headers, Body, Rhc, Timeout) ->
-    AuthHeader = get_auth_header(Rhc#rhc.options),
-    SSLOptions = get_ssl_options(Rhc#rhc.options),
+    Options = Rhc#rhc.options,
+    AuthHeader = get_auth_header(Options),
+    SSLOptions = get_ssl_options(Options),
+    UsePool = get_pool(Options),
     Accept = {"Accept", "multipart/mixed, */*;q=0.9"},
-    case ibrowse:send_req(Url, [Accept|Headers] ++ AuthHeader, Method, Body,
-                          [{response_format, binary}] ++ SSLOptions,
-                          Timeout) of
+    Response =
+        case UsePool of
+            ibrowse_pool ->
+                ibrowse:send_req(
+                    Url,
+                    [Accept|Headers] ++ AuthHeader,
+                    Method,
+                    Body,
+                    [{response_format, binary}] ++ SSLOptions,
+                    Timeout
+                );
+            no_pool ->
+                Connection = {"Connection", "close"},
+                {ok, C} = ibrowse:spawn_worker_process(Url),
+                R0 =
+                    ibrowse:send_req_direct(
+                        C,
+                        Url,
+                        Headers ++ [Accept, Connection] ++ AuthHeader,
+                        Method,
+                        Body,
+                        [{response_format, binary}] ++ SSLOptions,
+                        Timeout
+                    ),
+                ibrowse:stop_worker_process(C),
+                R0
+            end,
+    case Response of
         Resp={ok, Status, _, _} ->
             case lists:member(Status, Expect) of
                 true -> Resp;
@@ -2271,13 +2297,27 @@ erlify_preflist(Response) ->
     {<<"primary">>, IfPrimary} = lists:keyfind(<<"primary">>, 1, Preflist),
     #preflist_item{partition = Partition, node = Node, primary = IfPrimary}.
 
+-spec get_pool(proplist()) -> no_pool|ibrowse_pool.
+get_pool(Options) ->
+    case lists:keyfind(connection_pool, 1, Options) of
+        {connection_pool, false} ->
+            no_pool;
+        _ ->
+            ibrowse_pool
+    end.
 
 get_auth_header(Options) ->
     case lists:keyfind(credentials, 1, Options) of
         {credentials, User, Password} ->
-            [{"Authorization", "Basic " ++ base64:encode_to_string(User ++ ":"
-                                                                  ++
-                                                                  Password)}];
+            [
+                {
+                    "Authorization",
+                    "Basic " ++ 
+                        base64:encode_to_string(
+                            User ++ ":" ++ Password
+                        )
+                }
+            ];
         _ ->
             []
     end.
