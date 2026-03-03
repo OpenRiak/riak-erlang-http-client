@@ -865,13 +865,15 @@ aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
 %% leveled_so parallel store.  A minimum n_val can be passed if known.  If
 %% there are buckets (with keys) below the minimum n_val they may not be
 %% detecting in the query.  Will default to 1.
--spec aae_list_buckets(rhc()) -> {ok, list(maybe_bucket())}.
+-spec aae_list_buckets(rhc()) -> {ok, list(maybe_bucket())}|{error, any()}.
 aae_list_buckets(Rhc) ->
     Url = lists:flatten([root_url(Rhc), "aaebucketlist"]),
     aae_list_buckets(Rhc, Url).
 
 -spec aae_list_buckets(
-    rhc(), pos_integer()|string())  -> {ok, list(maybe_bucket())}.
+    rhc(), pos_integer()|string()
+) ->
+    {ok, list(maybe_bucket())}|{error, any()}.
 aae_list_buckets(Rhc, MinNVal) when is_integer(MinNVal), MinNVal > 0 ->
     Url = lists:flatten([root_url(Rhc), "aaebucketlist",
                             "?filter=", integer_to_list(MinNVal)]),
