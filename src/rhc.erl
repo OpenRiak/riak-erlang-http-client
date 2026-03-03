@@ -71,6 +71,7 @@
          filter_query/10,
          combo_query/7,
          fetch_query_results/4,
+         check_resultqueue_complete/1,
          make_query/4,
          make_query_url/2,
          handle_query_error/1,
@@ -1267,6 +1268,19 @@ decode_resultqueue_body(ReplyBody) ->
                     ResultMap
                 )
             )
+    end.
+
+-spec check_resultqueue_complete(result_queue_output()) -> boolean().
+check_resultqueue_complete(ResultMap) ->
+    case
+        {
+            maps:get(returned_count, ResultMap),
+            maps:get(queued_count, ResultMap)
+        } of
+        {RC, QC} when RC == QC ->
+            maps:get(query_complete, ResultMap);
+        _ ->
+            false
     end.
 
 maybe_add_options(QueryDefn, []) ->
