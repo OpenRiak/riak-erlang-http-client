@@ -70,6 +70,8 @@
          range_query/7,
          filter_query/10,
          combo_query/7,
+         fetch_query_results/4,
+         check_resultqueue_complete/1,
          make_query/4,
          make_query_url/2,
          handle_query_error/1,
@@ -863,13 +865,15 @@ aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
 %% leveled_so parallel store.  A minimum n_val can be passed if known.  If
 %% there are buckets (with keys) below the minimum n_val they may not be
 %% detecting in the query.  Will default to 1.
--spec aae_list_buckets(rhc()) -> {ok, list(maybe_bucket())}.
+-spec aae_list_buckets(rhc()) -> {ok, list(maybe_bucket())}|{error, any()}.
 aae_list_buckets(Rhc) ->
     Url = lists:flatten([root_url(Rhc), "aaebucketlist"]),
     aae_list_buckets(Rhc, Url).
 
 -spec aae_list_buckets(
-    rhc(), pos_integer()|string())  -> {ok, list(maybe_bucket())}.
+    rhc(), pos_integer()|string()
+) ->
+    {ok, list(maybe_bucket())}|{error, any()}.
 aae_list_buckets(Rhc, MinNVal) when is_integer(MinNVal), MinNVal > 0 ->
     Url = lists:flatten([root_url(Rhc), "aaebucketlist",
                             "?filter=", integer_to_list(MinNVal)]),
@@ -890,6 +894,7 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
     ::
         keys |
         raw_keys |
+        queue_raw_keys |
         raw_count |
         count.
 % -type term_accumulator() :: binary().
@@ -897,6 +902,7 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
     ::
         raw_terms |
         terms |
+        queue_raw_terms |
         term_with_rawcount |
         term_with_count.
 -type accumulation_option()
@@ -920,6 +926,11 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
         {timeout, pos_integer()}|
         {max_results, pos_integer()}|
         {continuation, binary()}.
+-type query_params() ::
+    list(
+        {result_queue, binary()} |
+        {max_results, non_neg_integer()}
+    ).
 
 -type keys_output()
     :: {keys, list(riakc_obj:key())}.
@@ -941,6 +952,15 @@ aae_list_buckets(Rhc, Url) when is_list(Url) ->
         count_output() |
         term_count_output() |
         term_keys_output().
+-type result_queue_output()
+    ::
+        #{
+            raw_keys|raw_terms|returned_count|queued_count|query_complete =>
+                list(riakc_obj:key()) |
+                list({term(), riakc_obj:key()}) |
+                pos_integer() |
+                boolean()
+        }.
 
 -spec range_query(
     rhc(),
@@ -1110,6 +1130,36 @@ combo_query(Rhc, Bucket, AccOpt, SubsMap, AggrExpression, QueryList, Opts)
             handle_query_error(ErrorResponse)
     end.
 
+-spec fetch_query_results(
+    rhc(), maybe_bucket(), binary()|query_params(), list(option())
+) ->
+    {ok, result_queue_output()}|error_output().
+fetch_query_results(Rhc, Bucket, QueryRef, Opts) when is_binary(QueryRef) ->
+    QueryParams =
+        case lists:keyfind(max_results, 1, Opts) of
+            {max_results, MR} when is_integer(MR), MR >= 0 ->
+                [{result_queue, QueryRef}, {max_results, MR}];
+            false ->
+                [{result_queue, QueryRef}]
+        end,
+    fetch_query_results(Rhc, Bucket, QueryParams, Opts);
+fetch_query_results(Rhc, Bucket, QueryParams, Opts) when is_list(QueryParams) ->
+    URI = make_query_url(Rhc, Bucket, QueryParams),
+    Headers = [{?HEAD_CLIENT, client_id(Rhc, Opts)}],
+    TimeOut = 
+        case lists:keyfind(timeout, 1, Opts) of
+            {timeout, TO} when is_integer(TO), TO >= 0 ->
+                TO;
+            false ->
+                ?QUERY_TIMEOUT
+        end,
+    case request(get, URI, ["200"], Headers, [], Rhc, TimeOut) of
+        {ok, "200", _ReplyHeaders, ReplyBody} ->
+            {ok, decode_resultqueue_body(ReplyBody)};
+        ErrorResponse ->
+            handle_query_error(ErrorResponse)
+    end.
+
 -spec make_query(
     pos_integer(), index_name(), {index_value(), index_value()},
     undefined|regular_expression()|{eval_expression(), filter_expression()}) ->
@@ -1186,9 +1236,54 @@ decode_query_body(ReplyBody) ->
         {struct, [{<<"term_with_count">>, {struct, TermCount}}]} ->
             {term_with_count, TermCount};
         {struct, [{<<"term_with_rawcount">>, {struct, TermCount}}]} ->
-            {term_with_rawcount, TermCount}
+            {term_with_rawcount, TermCount};
+        {struct, [{<<"result_queue">>, QueueRef}]} ->
+            {result_queue, QueueRef}
     end.
 
+-spec decode_resultqueue_body(binary()) -> result_queue_output().
+decode_resultqueue_body(ReplyBody) ->
+    case mochijson2:decode(ReplyBody) of
+        {struct, ResultMap} ->
+            maps:from_list(
+                lists:map(
+                    fun({K, V}) ->
+                        case K of
+                            <<"raw_keys">> ->
+                                {raw_keys, V};
+                            <<"raw_terms">> ->
+                                {
+                                    raw_terms,
+                                    lists:map(
+                                        fun({struct, [TK]}) -> TK end,
+                                        V
+                                    )
+                                };
+                            <<"returned_count">> ->
+                                {returned_count, V};
+                            <<"queued_count">> ->
+                                {queued_count, V};
+                            <<"query_complete">> ->
+                                {query_complete, V}
+                        end
+                    end,
+                    ResultMap
+                )
+            )
+    end.
+
+-spec check_resultqueue_complete(result_queue_output()) -> boolean().
+check_resultqueue_complete(ResultMap) ->
+    case
+        {
+            maps:get(returned_count, ResultMap),
+            maps:get(queued_count, ResultMap)
+        } of
+        {RC, QC} when RC == QC ->
+            maps:get(query_complete, ResultMap);
+        _ ->
+            false
+    end.
 
 maybe_add_options(QueryDefn, []) ->
     QueryDefn;
@@ -1875,15 +1970,37 @@ make_url(Rhc, BucketAndType, Key, Query) ->
 
 -spec make_query_url(rhc(), maybe_bucket()) -> iolist().
 make_query_url(Rhc, BucketAndType) ->
+    make_query_url(Rhc, BucketAndType, []).
+
+-spec make_query_url(rhc(), maybe_bucket(), query_params()) -> iolist().
+make_query_url(Rhc, BucketAndType, QueryParams) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
+    QP = generate_query_params(QueryParams),
     lists:flatten(
         [
             root_url(Rhc),
             [ ["types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
             "buckets", "/", mochiweb_util:quote_plus(Bucket),
-            "/query"
+            "/query",
+            QP
             ]).
 
+-spec generate_query_params(query_params()) -> iolist().
+generate_query_params([]) ->
+    "";
+generate_query_params(M) when is_list(M) ->
+    case lists:keyfind(result_queue, 1, M) of
+        {result_queue, QueueRef} when is_binary(QueueRef) ->
+            case lists:keyfind(max_results, 1, M) of
+                false ->
+                    io_lib:format("?result_queue=~s", [QueueRef]);
+                {max_results, MR} when is_integer(MR), MR >= 0 ->
+                    io_lib:format(
+                        "?result_queue=~s&max_results=~w",
+                        [QueueRef, MR]
+                    )
+            end
+    end.
 
 %% @doc Generate a preflist url.
 -spec make_preflist_url(rhc(), maybe_bucket(), riakc_obj:key()) -> iolist().
